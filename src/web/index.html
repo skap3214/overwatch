@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0a0b">
+  <title>Overwatch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div id="app">
+    <header id="status-bar">
+      <div class="status-left">
+        <span class="status-indicator" id="conn-dot"></span>
+        <span id="conn-label">connecting</span>
+      </div>
+      <div class="status-center">OVERWATCH</div>
+      <div class="status-right">
+        <span id="harness-label"></span>
+      </div>
+    </header>
+
+    <main id="transcript-area">
+      <div id="transcript-scroll">
+        <div id="transcript-content"></div>
+      </div>
+      <div class="transcript-fade-top"></div>
+    </main>
+
+    <footer id="controls">
+      <div class="amplitude-bar" id="amplitude-bar">
+        <div class="amplitude-fill" id="amplitude-fill"></div>
+      </div>
+      <div class="input-row">
+        <form id="text-form" class="text-input-form" autocomplete="off">
+          <input id="text-input" type="text" placeholder="type a message..." aria-label="Type a message" autocomplete="off">
+          <button type="submit" id="send-btn" aria-label="Send">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </form>
+        <button id="ptt-btn" type="button" aria-label="Push to talk">
+          <div class="ptt-ring"></div>
+          <div class="ptt-inner">
+            <svg class="ptt-mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="1" width="6" height="12" rx="3"></rect>
+              <path d="M19 10v1a7 7 0 0 1-14 0v-1"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+            </svg>
+            <svg class="ptt-stop-icon" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+            </svg>
+          </div>
+        </button>
+      </div>
+      <div class="ptt-hint" id="ptt-hint">tap to speak</div>
+    </footer>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

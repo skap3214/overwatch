@@ -1,0 +1,22 @@
+node_modules/
+dist/
+.env
+.DS_Store
+logs/
+state/
+.claude/
+
+# Mobile
+overwatch-mobile/node_modules/
+overwatch-mobile/ios/
+overwatch-mobile/android/
+overwatch-mobile/.expo/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Swift (deprecated)
+ios/
