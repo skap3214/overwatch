@@ -17,7 +17,7 @@ async function createRoom(relayUrl: string): Promise<RoomResponse> {
   return (await res.json()) as RoomResponse;
 }
 
-function startBackend(port: number): ChildProcess {
+function startBackend(port: number, config: import("../config.js").OverwatchConfig): ChildProcess {
   // Find the backend entry point relative to the CLI
   // In development: ../../src/index.ts (from packages/cli/)
   // When published: the user clones the repo and runs from root
@@ -34,7 +34,12 @@ function startBackend(port: number): ChildProcess {
   }
 
   const child = spawn("npx", ["tsx", entryPoint], {
-    env: { ...process.env, PORT: String(port) },
+    env: {
+      ...process.env,
+      PORT: String(port),
+      ...(config.deepgramApiKey && { DEEPGRAM_API_KEY: config.deepgramApiKey }),
+      ...(config.cartesiaApiKey && { CARTESIA_API_KEY: config.cartesiaApiKey }),
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
 
@@ -78,7 +83,7 @@ export async function startCommand(): Promise<void> {
   process.stdout.write(`  Backend:  `);
   let backendProcess: ChildProcess;
   try {
-    backendProcess = startBackend(port);
+    backendProcess = startBackend(port, config);
     await waitForBackend(port);
     console.log(chalk.green("✓") + ` running on localhost:${port}`);
   } catch (err) {
