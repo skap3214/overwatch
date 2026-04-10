@@ -19,4 +19,4 @@ overwatch-mobile/.expo/
 *.orig.*
 
 # Swift (deprecated)
-ios/
+/ios/
