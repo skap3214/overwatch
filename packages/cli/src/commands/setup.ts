@@ -45,8 +45,12 @@ function detectTerminals(): TerminalInfo[] {
   const terminals: TerminalInfo[] = [
     {
       name: "Ghostty",
-      configPath: join(home, ".config", "ghostty", "config"),
-      detected: existsSync(join(home, ".config", "ghostty", "config")),
+      configPath: existsSync(join(home, ".config", "ghostty", "config"))
+        ? join(home, ".config", "ghostty", "config")
+        : join(home, "Library", "Application Support", "com.mitchellh.ghostty", "config"),
+      detected:
+        existsSync(join(home, ".config", "ghostty", "config")) ||
+        existsSync(join(home, "Library", "Application Support", "com.mitchellh.ghostty", "config")),
     },
     {
       name: "Kitty",
