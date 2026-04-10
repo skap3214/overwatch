@@ -186,11 +186,37 @@ function configureITerm2(scriptPath: string): boolean {
   }
 }
 
+function userAlreadyHasTmux(): boolean {
+  // Check if terminal config already launches tmux
+  const home = homedir();
+  const configs = [
+    join(home, ".config", "ghostty", "config"),
+    join(home, "Library", "Application Support", "com.mitchellh.ghostty", "config"),
+    join(home, ".config", "kitty", "kitty.conf"),
+    join(home, ".config", "alacritty", "alacritty.toml"),
+  ];
+  for (const cfg of configs) {
+    if (!existsSync(cfg)) continue;
+    const content = readFileSync(cfg, "utf-8");
+    if (content.includes("tmux") && (content.includes("command") || content.includes("shell"))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function setupTerminal(
   rl: ReturnType<typeof createInterface>
 ): Promise<void> {
   console.log(chalk.bold("\nTerminal Setup"));
   console.log(chalk.dim("──────────────"));
+
+  if (userAlreadyHasTmux()) {
+    console.log(chalk.green("  ✓") + " Detected existing tmux setup in your terminal config.");
+    console.log(chalk.dim("  Skipping — your current setup will work with Overwatch.\n"));
+    return;
+  }
+
   console.log(
     chalk.dim(
       "Configure your terminal to auto-start tmux on new tabs."
