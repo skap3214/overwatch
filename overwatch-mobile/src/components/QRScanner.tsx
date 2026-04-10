@@ -38,12 +38,19 @@ export function QRScanner({ onClose }: Props) {
         hostPublicKey: parsed.hostPublicKey,
       };
 
+      // Disconnect any existing connection first, then set relay URL
+      // so the useRealtimeConnection effect doesn't interfere
+      realtimeClient.disconnect();
+
       useConnectionStore.setState({
         backendURL: `relay:${parsed.room}`,
         connectionStatus: "disconnected",
       });
 
-      realtimeClient.connectViaRelay(config);
+      // Small delay to let the effect see the relay: URL and skip
+      setTimeout(() => {
+        realtimeClient.connectViaRelay(config);
+      }, 100);
 
       onClose();
     } catch (err) {
