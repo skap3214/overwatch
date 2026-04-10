@@ -1,9 +1,10 @@
 import React, { useState, useCallback } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, Keyboard } from "react-native";
-import { Sun, Moon, Monitor, ChevronRight, Hand } from "lucide-react-native";
+import { View, Text, TextInput, Pressable, ScrollView, Keyboard, Modal } from "react-native";
+import { Sun, Moon, Monitor, ChevronRight, Hand, QrCode } from "lucide-react-native";
 import { useConnectionStore } from "../stores/connection-store";
 import { useThemeStore, type ThemeMode } from "../stores/theme-store";
 import { useColors } from "../theme";
+import { QRScanner } from "./QRScanner";
 
 type Props = {
   onClose: () => void;
@@ -20,6 +21,7 @@ export function SettingsPage({ onClose }: Props) {
   const { backendURL, setBackendURL, connectionStatus, checkHealth } = useConnectionStore();
   const { mode: themeMode, setMode: setThemeMode, hand, setHand } = useThemeStore();
   const [urlInput, setUrlInput] = useState(backendURL);
+  const [showQR, setShowQR] = useState(false);
 
   const handleSave = useCallback(async () => {
     Keyboard.dismiss();
@@ -42,11 +44,37 @@ export function SettingsPage({ onClose }: Props) {
         </Pressable>
       </View>
 
-      {/* Backend URL */}
+      {/* QR Scanner Modal */}
+      <Modal visible={showQR} animationType="slide">
+        <QRScanner onClose={() => setShowQR(false)} />
+      </Modal>
+
+      {/* Connection */}
       <View style={{ gap: 10, backgroundColor: colors.surface, borderRadius: 16, padding: 16 }}>
         <Text style={{ color: colors.textDim, fontSize: 12, fontFamily: "IosevkaAile-Regular", textTransform: "uppercase", letterSpacing: 1 }}>
           Connection
         </Text>
+
+        {/* QR Scan button */}
+        <Pressable
+          onPress={() => setShowQR(true)}
+          style={{
+            flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
+            backgroundColor: colors.accent, paddingVertical: 14, borderRadius: 12,
+          }}
+        >
+          <QrCode size={18} color={colors.bg} />
+          <Text style={{ color: colors.bg, fontFamily: "IosevkaAile-Medium", fontSize: 14 }}>
+            Scan QR Code
+          </Text>
+        </Pressable>
+
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+          <Text style={{ color: colors.textFaint, fontSize: 11, fontFamily: "IosevkaAile-Regular" }}>or enter manually</Text>
+          <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+        </View>
+
         <TextInput
           value={urlInput}
           onChangeText={setUrlInput}

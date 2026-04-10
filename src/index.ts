@@ -7,7 +7,10 @@ import { loadConfig } from "./config.js";
 import { PiCodingAgentHarness } from "./harness/pi-coding-agent.js";
 import { DeepgramSttAdapter } from "./stt/deepgram.js";
 import { CartesiaTtsAdapter } from "./tts/cartesia.js";
-import { createVoiceTurnHandler, createTextTurnHandler } from "./routes/voice-turn.js";
+import { TurnCoordinator } from "./orchestrator/turn-coordinator.js";
+import { createSttHandler } from "./routes/stt.js";
+import { attachRealtimeServer } from "./realtime/socket-server.js";
+import { SchedulerRunner } from "./tasks/scheduler-runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 // In dev (tsx): __dirname is src/, so web/ is a sibling. In prod (dist/): go up to root then into src/web.
@@ -30,6 +33,8 @@ const harness = new PiCodingAgentHarness();
 const tts = new CartesiaTtsAdapter({
   apiKey: config.CARTESIA_API_KEY,
 });
+const coordinator = new TurnCoordinator(harness, tts);
+const schedulerRunner = new SchedulerRunner(coordinator);
 const stt = new DeepgramSttAdapter({
   apiKey: config.DEEPGRAM_API_KEY,
 });
@@ -40,6 +45,7 @@ app.get("/health", (c) =>
   c.json({
     status: "ok",
     harness: "pi-coding-agent",
+    realtime: "websocket",
     tts: tts.constructor.name,
     stt: stt.constructor.name,
   }),
@@ -85,10 +91,7 @@ app.post("/debug/stt", async (c) => {
   return c.json(transcript);
 });
 
-// Voice turn route — end-to-end SSE: audio → STT → harness → TTS → client
-const turnDeps = { harness, stt, tts };
-app.post("/api/v1/voice-turn", createVoiceTurnHandler(turnDeps));
-app.post("/api/v1/text-turn", createTextTurnHandler(turnDeps));
+app.post("/api/v1/stt", createSttHandler({ stt }));
 
 // Static file serving for the web frontend
 app.get("/*", async (c) => {
@@ -114,6 +117,8 @@ app.get("/*", async (c) => {
 
 console.log(`[overwatch] starting on http://localhost:${config.PORT}`);
 
-serve({ fetch: app.fetch, port: config.PORT }, (info) => {
+const server = serve({ fetch: app.fetch, port: config.PORT }, (info) => {
   console.log(`[overwatch] listening on http://localhost:${info.port}`);
 });
+attachRealtimeServer(server, coordinator);
+schedulerRunner.start();

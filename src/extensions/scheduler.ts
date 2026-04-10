@@ -1,12 +1,10 @@
 /**
  * Scheduler extension — recurring and one-shot scheduled tasks.
  *
- * Ported from halo-2's pi-agent scheduler. Stripped of Pi-specific
- * functionality (SSH, TTS announcements). Uses the same cron-based
- * tick pump pattern.
- *
- * When a task fires, sends a user message to the agent via pi.sendUserMessage().
- * The agent can then act on it (e.g. check tmux, run a command, etc.)
+ * Ported from halo-2's pi-agent scheduler. In Overwatch, this extension
+ * only provides task creation/list/delete tools. Actual due-task execution
+ * is handled by the backend scheduler runner so tasks can be queued,
+ * surfaced to mobile clients, and captured as background results.
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
@@ -19,12 +17,11 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 const TASKS_DIR = join(homedir(), ".overwatch");
 const TASKS_PATH = join(TASKS_DIR, "scheduled_tasks.json");
-const TICK_MS = 1000;
-const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export interface ScheduledTask {
   id: string;
   cron: string;
+  intervalMs?: number;
   prompt: string;
   recurring: boolean;
   createdAt: number;
@@ -71,6 +68,25 @@ export function intervalToCron(interval: string): string | null {
   }
 }
 
+export function intervalToMs(interval: string): number | null {
+  const match = interval.match(/^(\d+)([smhd])$/);
+  if (!match) return null;
+  const n = parseInt(match[1], 10);
+  const unit = match[2];
+  switch (unit) {
+    case "s":
+      return n * 1000;
+    case "m":
+      return n * 60 * 1000;
+    case "h":
+      return n * 60 * 60 * 1000;
+    case "d":
+      return n * 24 * 60 * 60 * 1000;
+    default:
+      return null;
+  }
+}
+
 export function getNextFireTime(cronExpr: string): Date | null {
   try {
     return new Cron(cronExpr).nextRun() ?? null;
@@ -81,10 +97,16 @@ export function getNextFireTime(cronExpr: string): Date | null {
 
 function formatTask(task: ScheduledTask): string {
   const type = task.recurring ? "recurring" : "one-shot";
-  const next = getNextFireTime(task.cron);
+  const next =
+    task.intervalMs && task.recurring
+      ? new Date((task.lastFiredAt ?? task.createdAt) + task.intervalMs)
+      : getNextFireTime(task.cron);
   const nextStr = next ? next.toLocaleString() : "unknown";
   const desc = task.description ? ` — ${task.description}` : "";
-  return `[${task.id}] ${type} (${task.cron}) next: ${nextStr}${desc}\n  prompt: "${task.prompt.slice(0, 100)}"`;
+  const schedule = task.intervalMs
+    ? `every ${Math.round(task.intervalMs / 1000)}s`
+    : task.cron;
+  return `[${task.id}] ${type} (${schedule}) next: ${nextStr}${desc}\n  prompt: "${task.prompt.slice(0, 100)}"`;
 }
 
 export function createScheduledTask(params: {
@@ -95,9 +117,11 @@ export function createScheduledTask(params: {
   description?: string;
 }): { task: ScheduledTask; nextFireTime: Date | null } {
   let cronExpr = params.cron;
+  let intervalMs: number | undefined;
   if (!cronExpr && params.interval) {
+    intervalMs = intervalToMs(params.interval) ?? undefined;
     cronExpr = intervalToCron(params.interval) ?? undefined;
-    if (!cronExpr) {
+    if (!intervalMs || !cronExpr) {
       throw new Error(
         `Invalid interval: ${params.interval}. Use format like 5m, 2h, 1d.`
       );
@@ -115,6 +139,7 @@ export function createScheduledTask(params: {
   const task: ScheduledTask = {
     id: randomUUID().slice(0, 8),
     cron: cronExpr,
+    intervalMs,
     prompt: params.prompt,
     recurring,
     createdAt: Date.now(),
@@ -138,115 +163,19 @@ export function deleteScheduledTask(taskId: string): ScheduledTask | null {
 }
 
 export function schedulerExtension() {
-  let tasks: ScheduledTask[] = [];
-  let tickInterval: ReturnType<typeof setInterval> | null = null;
-  let agentBusy = false;
-
   return (pi: ExtensionAPI) => {
-    // Load tasks immediately
-    tasks = loadScheduledTasks();
-    if (tasks.length > 0) {
-      console.log(`[scheduler] Loaded ${tasks.length} scheduled task(s)`);
-    }
-
-    // Start the tick pump
-    tickInterval = setInterval(() => tick(pi), TICK_MS);
-    if (tickInterval.unref) tickInterval.unref();
-    console.log("[scheduler] Tick pump started");
-
-    // Reload tasks on session start
-    pi.on("session_start", () => {
-      tasks = loadScheduledTasks();
-    });
-
-    // Track busy state
-    pi.on("turn_start", () => {
-      agentBusy = true;
-    });
-    pi.on("turn_end", () => {
-      agentBusy = false;
-    });
-    pi.on("agent_end", () => {
-      agentBusy = false;
-    });
-
-    // Clean up on shutdown
-    pi.on("session_shutdown", () => {
-      if (tickInterval) {
-        clearInterval(tickInterval);
-        tickInterval = null;
-        console.log("[scheduler] Tick pump stopped");
-      }
-    });
-
-    function tick(pi: ExtensionAPI) {
-      tasks = loadScheduledTasks();
-      if (agentBusy) return;
-
-      const now = Date.now();
-      const toDelete: string[] = [];
-
-      for (const task of tasks) {
-        // Expire old recurring tasks
-        if (task.recurring && now - task.createdAt > MAX_AGE_MS) {
-          toDelete.push(task.id);
-          console.log(`[scheduler] Expired old task ${task.id}`);
-          continue;
-        }
-
-        // Debounce: don't fire more than once per 55 seconds
-        const lastFired = task.lastFiredAt ?? 0;
-        if (now - lastFired < 55_000) continue;
-
-        try {
-          const cron = new Cron(task.cron);
-          const next = cron.nextRun();
-          if (!next) continue;
-
-          const msToNext = next.getTime() - now;
-
-          // Fire when within 1.5 seconds of fire time
-          if (msToNext <= 1500 && msToNext >= -5000) {
-            console.log(
-              `[scheduler] Firing task ${task.id}: ${task.prompt.slice(0, 50)}`
-            );
-
-            pi.sendUserMessage(
-              `[Scheduled task ${task.id}]: ${task.prompt}`
-            );
-
-            task.lastFiredAt = now;
-            saveScheduledTasks(tasks);
-
-            if (!task.recurring) {
-              toDelete.push(task.id);
-            }
-            // Only fire one task per tick
-            break;
-          }
-        } catch {
-          // Invalid cron, skip
-        }
-      }
-
-      if (toDelete.length > 0) {
-        tasks = tasks.filter((t) => !toDelete.includes(t.id));
-        saveScheduledTasks(tasks);
-      }
-    }
-
     // schedule_create
     pi.registerTool({
       name: "schedule_create",
       label: "Schedule Task",
       description:
         "Create a scheduled task that runs a prompt on an interval or at a specific time. " +
-        "Supports cron expressions or simple intervals (5m, 30m, 2h, 1d). " +
+        "Supports cron expressions or simple intervals (10s, 30s, 5m, 2h, 1d). " +
         "Use this to set up periodic monitoring of tmux sessions, reminders, or any recurring check.",
       promptSnippet: "Schedule recurring or one-shot tasks.",
       promptGuidelines: [
         "Use schedule_create for periodic tmux session checks, reminders, or recurring tasks.",
-        "Simple intervals: 5m, 30m, 2h, 1d. Or use cron expressions for precise scheduling.",
+        "Simple intervals: 10s, 30s, 5m, 2h, 1d. Or use cron expressions for precise scheduling.",
         "The prompt will be sent as a user message when the task fires. Include what you want to check or do.",
       ],
       parameters: Type.Object({
@@ -254,7 +183,7 @@ export function schedulerExtension() {
           description: "The prompt to run when the task fires.",
         }),
         interval: Type.Optional(
-          Type.String({ description: "Simple interval: 5m, 30m, 2h, 1d." })
+          Type.String({ description: "Simple interval: 10s, 30s, 5m, 2h, 1d." })
         ),
         cron: Type.Optional(
           Type.String({
@@ -274,7 +203,6 @@ export function schedulerExtension() {
       }),
       async execute(_toolCallId, params) {
         const { task, nextFireTime } = createScheduledTask(params);
-        tasks = loadScheduledTasks();
         return ok(
           `Scheduled task ${task.id} (${task.recurring ? "recurring" : "one-shot"}). Next fire: ${nextFireTime?.toLocaleString() ?? "unknown"}`
         );
@@ -289,7 +217,7 @@ export function schedulerExtension() {
       promptSnippet: "List all scheduled tasks.",
       parameters: Type.Object({}),
       async execute() {
-        tasks = loadScheduledTasks();
+        const tasks = loadScheduledTasks();
         if (tasks.length === 0) return ok("No scheduled tasks.");
         return ok(tasks.map(formatTask).join("\n\n"));
       },
@@ -307,7 +235,6 @@ export function schedulerExtension() {
       async execute(_toolCallId, params) {
         const removed = deleteScheduledTask(params.taskId);
         if (!removed) throw new Error(`Task not found: ${params.taskId}`);
-        tasks = loadScheduledTasks();
         return ok(
           `Deleted task ${removed.id}: "${removed.prompt.slice(0, 80)}"`
         );

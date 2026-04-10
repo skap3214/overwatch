@@ -46,5 +46,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
           "Overwatch uses the microphone for push-to-talk voice commands.",
       },
     ],
+    [
+      "expo-camera",
+      {
+        cameraPermission:
+          "Overwatch uses the camera to scan QR codes for connecting to your computer.",
+      },
+    ],
   ],
 });

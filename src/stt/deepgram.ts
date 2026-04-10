@@ -7,7 +7,7 @@ interface DeepgramSttAdapterOptions {
 }
 
 export class DeepgramSttAdapter implements SttAdapter {
-  private static readonly DEFAULT_KEYTERMS = ["Claude", "Codex"];
+  private static readonly DEFAULT_KEYTERMS = ["Claude", "Codex", "tmux"];
   private readonly apiKey?: string;
   private readonly keyterms: string[];
 

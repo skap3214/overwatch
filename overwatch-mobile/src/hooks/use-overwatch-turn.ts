@@ -2,74 +2,16 @@ import { useCallback } from "react";
 import { useTurnStore } from "../stores/turn-store";
 import { useConnectionStore } from "../stores/connection-store";
 import { useAudioPlayer } from "./use-audio-player";
-import { textTurn, voiceTurn } from "../services/api";
-import type { SSEEvent } from "../types";
+import { transcribeAudio } from "../services/api";
+import { realtimeClient } from "../services/realtime";
 
 export function useOverwatchTurn() {
-  const { backendURL } = useConnectionStore();
+  const { backendURL, connectionStatus } = useConnectionStore();
   const store = useTurnStore();
   const player = useAudioPlayer();
 
-  const handleEvents = useCallback(
-    (abortController: AbortController) => {
-      let audioStarted = false;
-
-      const onEvent = (event: SSEEvent) => {
-        if (abortController.signal.aborted) return;
-
-        switch (event.type) {
-          case "transcript":
-            store.addUserMessage(event.data.text);
-            break;
-          case "text_delta":
-            store.handleTextDelta(event.data.text);
-            break;
-          case "tool_call":
-            store.handleToolCall(event.data.name);
-            break;
-          case "audio_chunk":
-            if (!audioStarted) {
-              player.startSession();
-              store.setTurnState("playing");
-              audioStarted = true;
-            }
-            player.feedChunk(event.data.base64);
-            break;
-          case "tts_error":
-            break;
-          case "error":
-            store.handleError(event.data.message);
-            if (audioStarted) player.stopAndReset();
-            break;
-          case "done":
-            if (audioStarted) player.markEnd();
-            store.handleDone();
-            break;
-        }
-      };
-
-      const onDone = () => {
-        if (audioStarted) player.markEnd();
-        store.handleDone();
-        store.setAbortController(null);
-      };
-
-      const onError = (err: Error) => {
-        if (err.name !== "AbortError" && err.message !== "Network error") {
-          store.handleError(err.message || "Connection error");
-        }
-        if (audioStarted) player.stopAndReset();
-        store.setAbortController(null);
-      };
-
-      return { onEvent, onDone, onError };
-    },
-    [store, player]
-  );
-
   const sendText = useCallback(
     (text: string) => {
-      if (!backendURL) return;
 
       // Cancel any in-progress turn (interruption)
       if (store.turnState !== "idle") {
@@ -77,20 +19,16 @@ export function useOverwatchTurn() {
         player.stopAndReset();
       }
 
-      const abortController = new AbortController();
-      store.setAbortController(abortController);
       store.addUserMessage(text);
       store.setTurnState("processing");
-
-      const { onEvent, onDone, onError } = handleEvents(abortController);
-      textTurn(backendURL, text, abortController.signal, onEvent, onDone, onError);
+      store.setAbortController(null);
+      realtimeClient.startTextTurn(text);
     },
-    [backendURL, store, handleEvents]
+    [connectionStatus, store, player]
   );
 
   const sendVoice = useCallback(
-    (audioUri: string, mimeType: string) => {
-      if (!backendURL) return;
+    async (audioUri: string, mimeType: string) => {
 
       // Cancel any in-progress turn (interruption)
       if (store.abortController) {
@@ -98,14 +36,59 @@ export function useOverwatchTurn() {
         player.stopAndReset();
       }
 
-      const abortController = new AbortController();
-      store.setAbortController(abortController);
       store.setTurnState("processing");
 
-      const { onEvent, onDone, onError } = handleEvents(abortController);
-      voiceTurn(backendURL, audioUri, mimeType, abortController.signal, onEvent, onDone, onError);
+      if (realtimeClient.mode === "relay") {
+        // Relay mode: send audio over WebSocket, CLI bridge handles STT
+        try {
+          // Read audio file as base64 via fetch + blob
+          const response = await fetch(audioUri);
+          const blob = await response.blob();
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const dataUrl = reader.result as string;
+              // Strip "data:...;base64," prefix
+              const b64 = dataUrl.split(",")[1] ?? "";
+              resolve(b64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          realtimeClient.sendVoiceAudio(base64, mimeType);
+          // The CLI bridge will send back voice.transcript, which the
+          // useRealtimeConnection hook handles
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Failed to read audio";
+          store.handleError(message);
+        }
+      } else {
+        // Direct mode: HTTP STT then WebSocket turn
+        if (!backendURL) return;
+        const abortController = new AbortController();
+        store.setAbortController(abortController);
+        try {
+          const transcript = await transcribeAudio(
+            backendURL,
+            audioUri,
+            mimeType,
+            abortController.signal
+          );
+          if (abortController.signal.aborted) return;
+          store.addUserMessage(transcript);
+          store.setAbortController(null);
+          realtimeClient.startTextTurn(transcript);
+        } catch (err) {
+          if (!abortController.signal.aborted) {
+            const message =
+              err instanceof Error ? err.message : "Voice transcription failed";
+            store.handleError(message);
+            store.setAbortController(null);
+          }
+        }
+      }
     },
-    [backendURL, store, handleEvents]
+    [backendURL, connectionStatus, store, player]
   );
 
   const cancel = useCallback(() => {

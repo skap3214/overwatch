@@ -3,7 +3,7 @@
 **Status:** ACCEPTED
 **Date:** 2026-04-05
 **Scope:** Current backend architecture as implemented in the repository
-**Related Code:** [../../src/index.ts](../../src/index.ts), [../../src/config.ts](../../src/config.ts), [../../src/harness/claude-code-cli.ts](../../src/harness/claude-code-cli.ts), [../../src/harness/pi-coding-agent.ts](../../src/harness/pi-coding-agent.ts), [../../src/harness/types.ts](../../src/harness/types.ts), [../../src/extensions/scheduler.ts](../../src/extensions/scheduler.ts), [../../src/extensions/memory.ts](../../src/extensions/memory.ts), [../../src/agent/memory/index.ts](../../src/agent/memory/index.ts), [../../src/stt/deepgram.ts](../../src/stt/deepgram.ts), [../../src/stt/types.ts](../../src/stt/types.ts), [../../src/tts/cartesia.ts](../../src/tts/cartesia.ts), [../../src/tts/types.ts](../../src/tts/types.ts), [../../src/shared/events.ts](../../src/shared/events.ts), [../../src/shared/async-queue.ts](../../src/shared/async-queue.ts)
+**Related Code:** [../../src/index.ts](../../src/index.ts), [../../src/config.ts](../../src/config.ts), [../../src/harness/claude-code-cli.ts](../../src/harness/claude-code-cli.ts), [../../src/harness/pi-coding-agent.ts](../../src/harness/pi-coding-agent.ts), [../../src/harness/types.ts](../../src/harness/types.ts), [../../src/extensions/scheduler.ts](../../src/extensions/scheduler.ts), [../../src/extensions/memory.ts](../../src/extensions/memory.ts), [../../src/agent/memory/index.ts](../../src/agent/memory/index.ts), [../../src/orchestrator/turn-coordinator.ts](../../src/orchestrator/turn-coordinator.ts), [../../src/tasks/scheduler-runner.ts](../../src/tasks/scheduler-runner.ts), [../../src/notifications/store.ts](../../src/notifications/store.ts), [../../src/realtime/socket-server.ts](../../src/realtime/socket-server.ts), [../../src/stt/deepgram.ts](../../src/stt/deepgram.ts), [../../src/stt/types.ts](../../src/stt/types.ts), [../../src/tts/cartesia.ts](../../src/tts/cartesia.ts), [../../src/tts/types.ts](../../src/tts/types.ts), [../../src/shared/events.ts](../../src/shared/events.ts), [../../src/shared/async-queue.ts](../../src/shared/async-queue.ts)
 **Related Docs:** [../plans/mvp-plan-2026-04-05.md](../plans/mvp-plan-2026-04-05.md), [../research/initial-research-2026-04-05.md](../research/initial-research-2026-04-05.md), [../insights.md](../insights.md)
 
 ## Decision
@@ -30,6 +30,7 @@ This is the key architectural rule:
 - tmux/session logic depends on `normalized harness events`
 - client logic depends on `backend audio/text events`
 - neither should depend directly on Claude CLI JSON shape, Deepgram JSON shape, or Cartesia WebSocket message shape
+- for the mobile client, audio ingestion and orchestration transport may be separate concerns
 
 ## Implemented Stack
 
@@ -44,7 +45,7 @@ This is the key architectural rule:
 
 - Primary implementation: Claude Code CLI wrapper
 - Fallback implementation planned: `pi-coding-agent`
-- Current in-process runtime path used by `src/index.ts`: `pi-coding-agent` with scheduler and memory extensions
+- Current in-process runtime path used by `src/index.ts`: `pi-coding-agent` with scheduler and memory extensions, coordinated by a serialized turn runner
 
 ### STT
 
@@ -70,6 +71,10 @@ Files:
 - `src/extensions/scheduler.ts`
 - `src/extensions/memory.ts`
 - `src/agent/memory/index.ts`
+- `src/orchestrator/turn-coordinator.ts`
+- `src/tasks/scheduler-runner.ts`
+- `src/notifications/store.ts`
+- `src/realtime/socket-server.ts`
 
 Purpose:
 
@@ -77,6 +82,8 @@ Purpose:
 - provide one `runTurn()` entry point
 - return normalized `HarnessEvent` values through an async iterator
 - provide scheduler primitives and persistent memory under `~/.overwatch/memory`
+- serialize foreground turns and background scheduled jobs through one coordinator
+- publish durable notifications for background work
 
 Current interface:
 
@@ -131,7 +138,7 @@ Current implementation details:
 - sends a standard HTTP POST to `https://api.deepgram.com/v1/listen`
 - uses model `nova-3`
 - enables punctuation and smart formatting
-- sends Deepgram `keyterm` hints for `Claude` and `Codex` so those product names are more likely to be transcribed correctly with Nova-3
+- sends Deepgram `keyterm` hints for `Claude`, `Codex`, and `tmux` so those terms are more likely to be transcribed correctly with Nova-3
 - returns the transcript plus raw provider JSON
 
 Important constraint:
@@ -228,6 +235,7 @@ Response:
 
 - `status`
 - current harness label
+- current realtime transport label
 - current TTS adapter label
 - current STT adapter label
 
@@ -291,6 +299,21 @@ Usefulness:
 
 - confirms the STT credentials and audio upload path work
 
+### `POST /api/v1/stt`
+
+Purpose:
+
+- accept recorded audio upload and return transcript JSON
+- support the mobile app flow of `record -> transcribe -> send transcript into the realtime turn channel`
+
+### `GET /api/v1/ws`
+
+Purpose:
+
+- provide the realtime control-plane socket
+- carry foreground turn events and background notification events over one bidirectional channel
+- serve as the primary orchestration transport for mobile text turns, transcript-derived voice turns, notifications, and acknowledgements
+
 ## Current End-To-End State
 
 Implemented and verified:
@@ -298,18 +321,12 @@ Implemented and verified:
 - Claude Code CLI can be run non-interactively through the backend and parsed into normalized events
 - Cartesia returns real TTS audio chunks
 - Deepgram returns real STT transcripts for uploaded WAV audio
+- the WebSocket control plane serves as the only turn-execution transport
 
 Not implemented yet:
 
-- one end-to-end route that performs `audio upload -> STT -> harness -> TTS`
 - tmux discovery, registry, capture, send, and copy/paste
-- browser/mobile frontend
-
-This is important for frontend work:
-
-- there is not yet a single stable “chat turn” route
-- a frontend agent should not invent one arbitrarily
-- the correct next move is to add an explicit turn contract in the backend first, then build UI on top of it
+- browser/mobile frontend hardening beyond the current control-plane slice
 
 ## Frontend-Relevant Constraints
 
@@ -330,13 +347,12 @@ These are the backend truths a frontend agent should assume.
 
 ### Recommended frontend contract direction
 
-A frontend should be built against a future route shaped approximately like:
+The mobile client should use:
 
-- `POST /api/v1/voice-turn`
-- request: recorded audio blob plus optional metadata
-- response: streamed backend events for transcript, orchestrator text, and audio playback chunks
+- `POST /api/v1/stt` for recorded audio transcription
+- `GET /api/v1/ws` for all turn execution, notifications, and acknowledgements
 
-The architecture supports that route cleanly, but it is not implemented yet.
+This keeps media ingestion separate from the realtime control plane while keeping turn execution on a single transport.
 
 ## Configuration
 

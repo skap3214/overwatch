@@ -12,11 +12,13 @@ import { useTurnStore } from "../src/stores/turn-store";
 import { useRecorder } from "../src/hooks/use-audio-recorder";
 import { useColors } from "../src/theme";
 import { StatusBar as OverwatchStatusBar } from "../src/components/StatusBar";
+import { NotificationsBanner } from "../src/components/NotificationsBanner";
 import { TranscriptView } from "../src/components/TranscriptView";
 import { InputBar } from "../src/components/InputBar";
 import { PTTButton } from "../src/components/PTTButton";
 import { SessionsPanel } from "../src/components/SessionsPanel";
 import { SettingsPage } from "../src/components/SettingsPage";
+import { useRealtimeConnection } from "../src/hooks/use-realtime-connection";
 import "../global.css";
 
 export default function App() {
@@ -25,6 +27,7 @@ export default function App() {
   const { loadBackendURL, backendURL } = useConnectionStore();
   const { sendText, sendVoice, cancel } = useOverwatchTurn();
   const { amplitude, startRecording, stopRecording } = useRecorder();
+  useRealtimeConnection();
 
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
@@ -124,6 +127,8 @@ export default function App() {
               onSettingsPress={goToSettings}
               onSessionsPress={goToSessions}
             />
+
+            <NotificationsBanner />
 
             <TranscriptView />
 

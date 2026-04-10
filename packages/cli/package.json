@@ -1,0 +1,26 @@
+{
+  "name": "overwatch-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "overwatch": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "commander": "^13.0.0",
+    "ws": "^8.18.0",
+    "qrcode-terminal": "^0.12.0",
+    "tweetnacl": "^1.0.3",
+    "chalk": "^5.4.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.0",
+    "@types/qrcode-terminal": "^0.12.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, Pressable } from "react-native";
 import { useConnectionStore } from "../stores/connection-store";
+import { useNotificationsStore } from "../stores/notifications-store";
 import { useTurnStore } from "../stores/turn-store";
 import { useColors } from "../theme";
 import { GlassSurface } from "./GlassSurface";
@@ -22,6 +23,7 @@ export function StatusBar({ onSettingsPress, onSessionsPress }: Props) {
   const colors = useColors();
   const connectionStatus = useConnectionStore((s) => s.connectionStatus);
   const turnState = useTurnStore((s) => s.turnState);
+  const unreadCount = useNotificationsStore((s) => s.unreadCount());
 
   const dotColor = connectionStatus === "connected" ? colors.success
     : connectionStatus === "error" ? colors.error : colors.textDim;
@@ -56,6 +58,26 @@ export function StatusBar({ onSettingsPress, onSessionsPress }: Props) {
           <Text style={{ color: colors.textDim, fontSize: 12, fontFamily: "IosevkaAile-Regular" }}>
             {label}
           </Text>
+        ) : null}
+        {unreadCount > 0 ? (
+          <View
+            style={{
+              backgroundColor: colors.surface,
+              borderRadius: 999,
+              paddingHorizontal: 8,
+              paddingVertical: 2,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.textDim,
+                fontSize: 11,
+                fontFamily: "IosevkaAile-Regular",
+              }}
+            >
+              {unreadCount} unread
+            </Text>
+          </View>
         ) : null}
       </View>
 

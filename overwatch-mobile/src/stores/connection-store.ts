@@ -30,7 +30,10 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
     const stored = await AsyncStorage.getItem(BACKEND_URL_KEY);
     if (stored) {
       set({ backendURL: stored });
-      get().checkHealth();
+      // Relay URLs need a QR scan to reconnect — don't auto health check
+      if (!stored.startsWith("relay:") && !stored.includes("(relay:")) {
+        get().checkHealth();
+      }
     }
   },
 
@@ -44,6 +47,8 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
       set({ connectionStatus: "disconnected" });
       return;
     }
+    // Relay mode — WebSocket handles status, skip HTTP health check
+    if (backendURL.startsWith("relay:") || backendURL.includes("(relay:")) return;
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
@@ -51,7 +56,11 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
         signal: controller.signal,
       });
       clearTimeout(timeout);
-      set({ connectionStatus: res.ok ? "connected" : "error" });
+      if (!res.ok) {
+        set({ connectionStatus: "error" });
+        return;
+      }
+      set({ connectionStatus: "connected" });
     } catch (err) {
       console.warn("Health check failed:", err);
       set({ connectionStatus: "error" });

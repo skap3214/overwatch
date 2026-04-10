@@ -1,5 +1,3 @@
-import type { SSEEvent } from "../types";
-
 export async function checkHealth(baseURL: string): Promise<boolean> {
   try {
     const controller = new AbortController();
@@ -14,97 +12,12 @@ export async function checkHealth(baseURL: string): Promise<boolean> {
   }
 }
 
-type SSECallback = (event: SSEEvent) => void;
-type SSEDone = () => void;
-type SSEError = (err: Error) => void;
-
-function streamSSE(
-  url: string,
-  options: { method: string; headers?: Record<string, string>; body?: any },
-  signal: AbortSignal,
-  onEvent: SSECallback,
-  onDone: SSEDone,
-  onError: SSEError
-) {
-  const xhr = new XMLHttpRequest();
-  xhr.open(options.method, url);
-
-  if (options.headers) {
-    for (const [key, value] of Object.entries(options.headers)) {
-      xhr.setRequestHeader(key, value);
-    }
-  }
-
-  let lastIndex = 0;
-  let eventType: string | null = null;
-  let lineBuffer = "";
-
-  xhr.onprogress = () => {
-    const newData = xhr.responseText.substring(lastIndex);
-    lastIndex = xhr.responseText.length;
-
-    // Prepend any leftover partial line from previous call
-    const toParse = lineBuffer + newData;
-    const lines = toParse.split("\n");
-    // Last element may be incomplete — save it for next time
-    lineBuffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith("event: ")) {
-        eventType = trimmed.slice(7).trim();
-      } else if (trimmed.startsWith("data: ") && eventType) {
-        try {
-          const data = JSON.parse(trimmed.slice(6));
-          onEvent({ type: eventType, data } as SSEEvent);
-        } catch {
-          // skip malformed data
-        }
-        eventType = null;
-      }
-    }
-  };
-
-  xhr.onload = () => onDone();
-  xhr.onerror = () => onError(new Error("Network error"));
-  xhr.ontimeout = () => onError(new Error("Request timeout"));
-
-  signal.addEventListener("abort", () => xhr.abort());
-
-  xhr.send(options.body ?? null);
-}
-
-export function textTurn(
-  baseURL: string,
-  text: string,
-  signal: AbortSignal,
-  onEvent: SSECallback,
-  onDone: SSEDone,
-  onError: SSEError
-) {
-  streamSSE(
-    `${baseURL}/api/v1/text-turn`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    },
-    signal,
-    onEvent,
-    onDone,
-    onError
-  );
-}
-
-export function voiceTurn(
+export async function transcribeAudio(
   baseURL: string,
   audioUri: string,
   mimeType: string,
-  signal: AbortSignal,
-  onEvent: SSECallback,
-  onDone: SSEDone,
-  onError: SSEError
-) {
+  signal?: AbortSignal
+): Promise<string> {
   const formData = new FormData();
   formData.append("audio", {
     uri: audioUri,
@@ -112,12 +25,25 @@ export function voiceTurn(
     name: "recording.wav",
   } as any);
 
-  streamSSE(
-    `${baseURL}/api/v1/voice-turn`,
-    { method: "POST", body: formData },
+  const res = await fetch(`${baseURL}/api/v1/stt`, {
+    method: "POST",
+    body: formData,
     signal,
-    onEvent,
-    onDone,
-    onError
-  );
+  });
+
+  const json = (await res.json().catch(() => ({}))) as {
+    transcript?: string;
+    error?: string;
+  };
+
+  if (!res.ok) {
+    throw new Error(json.error || `STT failed with status ${res.status}`);
+  }
+
+  const transcript = json.transcript?.trim() ?? "";
+  if (!transcript) {
+    throw new Error("No speech detected");
+  }
+
+  return transcript;
 }
