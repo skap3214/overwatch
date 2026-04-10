@@ -1,28 +1,33 @@
 import React, { type ReactNode, type ComponentProps } from "react";
 import { View, Platform } from "react-native";
-import {
-  GlassView,
-  isGlassEffectAPIAvailable,
-  isLiquidGlassAvailable,
-} from "expo-glass-effect";
+
+// Dynamic import — expo-glass-effect may crash on older iOS / non-iOS
+let GlassView: any = null;
+let isGlassAvailable = false;
+
+try {
+  const mod = require("expo-glass-effect");
+  if (
+    Platform.OS === "ios" &&
+    mod.isLiquidGlassAvailable?.() &&
+    mod.isGlassEffectAPIAvailable?.()
+  ) {
+    GlassView = mod.GlassView;
+    isGlassAvailable = true;
+  }
+} catch {
+  // Not available — use fallback
+}
 
 type Props = {
   children: ReactNode;
   colorScheme?: "auto" | "light" | "dark";
   fallbackStyle?: ComponentProps<typeof View>["style"];
-  glassEffectStyle?: ComponentProps<typeof GlassView>["glassEffectStyle"];
+  glassEffectStyle?: string;
   isInteractive?: boolean;
   style: ComponentProps<typeof View>["style"];
   tintColor?: string;
 };
-
-function canUseLiquidGlass() {
-  return (
-    Platform.OS === "ios" &&
-    isLiquidGlassAvailable() &&
-    isGlassEffectAPIAvailable()
-  );
-}
 
 export function GlassSurface({
   children,
@@ -33,7 +38,7 @@ export function GlassSurface({
   style,
   tintColor,
 }: Props) {
-  if (canUseLiquidGlass()) {
+  if (isGlassAvailable && GlassView) {
     return (
       <GlassView
         colorScheme={colorScheme}

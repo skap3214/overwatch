@@ -14,7 +14,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     backgroundColor: "#0c0c0c",
   },
   ios: {
-    bundleIdentifier: "com.overwatch.mobile",
+    bundleIdentifier: "com.youlearn.overwatch",
     supportsTablet: false,
     infoPlist: {
       NSMicrophoneUsageDescription:
@@ -22,11 +22,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
       },
+      ITSAppUsesNonExemptEncryption: false,
       UIBackgroundModes: ["audio"],
     },
   },
   android: {
-    package: "com.overwatch.mobile",
+    package: "com.youlearn.overwatch",
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
       backgroundColor: "#0c0c0c",
@@ -54,4 +55,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     ],
   ],
+  extra: {
+    eas: {
+      projectId: "705a277b-52f9-4c49-9803-cd70d4dd2573",
+    },
+  },
 });
