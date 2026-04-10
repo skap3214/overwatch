@@ -242,61 +242,52 @@ async function setupTerminal(
   detected.forEach((t) => console.log(`  ${chalk.green("✓")} ${t.name}`));
   console.log("");
 
-  const options = [...detected.map((t) => t.name), "Skip"];
-  const choice = await choose(
-    rl,
-    "  Which terminal should auto-start tmux?",
-    options
-  );
-
-  if (choice === -1 || choice === detected.length) {
-    console.log(chalk.dim("  Skipped terminal setup.\n"));
-    return;
-  }
-
-  const terminal = detected[choice];
   const scriptPath = installTmuxScript();
   console.log(
     chalk.green("  ✓") +
-      ` Installed tmux script at ${scriptPath}`
+      ` Installed tmux script at ${scriptPath}\n`
   );
 
-  let configured = false;
-  switch (terminal.name) {
-    case "Ghostty":
-      configured = configureGhostty(terminal.configPath, scriptPath);
-      break;
-    case "Kitty":
-      configured = configureKitty(terminal.configPath, scriptPath);
-      break;
-    case "Alacritty":
-      configured = configureAlacritty(terminal.configPath, scriptPath);
-      break;
-    case "iTerm2":
-      configured = configureITerm2(scriptPath);
-      break;
-  }
+  for (const terminal of detected) {
+    const answer = await ask(
+      rl,
+      `  Configure ${terminal.name}? (Y/n): `
+    );
+    if (answer.trim().toLowerCase() === "n") continue;
 
-  if (configured) {
-    console.log(
-      chalk.green("  ✓") +
-        ` Updated ${terminal.name} config`
-    );
-    console.log(
-      chalk.dim(
-        `    Backup saved at ${terminal.configPath}.overwatch-backup`
-      )
-    );
-  } else {
-    console.log(
-      chalk.dim("  Already configured — no changes needed.")
-    );
+    let configured = false;
+    switch (terminal.name) {
+      case "Ghostty":
+        configured = configureGhostty(terminal.configPath, scriptPath);
+        break;
+      case "Kitty":
+        configured = configureKitty(terminal.configPath, scriptPath);
+        break;
+      case "Alacritty":
+        configured = configureAlacritty(terminal.configPath, scriptPath);
+        break;
+      case "iTerm2":
+        configured = configureITerm2(scriptPath);
+        break;
+    }
+
+    if (configured) {
+      console.log(
+        chalk.green("  ✓") +
+          ` Updated ${terminal.name} config`
+      );
+      console.log(
+        chalk.dim(
+          `    Backup saved at ${terminal.configPath}.overwatch-backup`
+        )
+      );
+    } else {
+      console.log(
+        chalk.dim(`  ${terminal.name} already configured — no changes needed.`)
+      );
+    }
   }
-  console.log(
-    chalk.dim(
-      "  New terminal tabs will now open in tmux sessions.\n"
-    )
-  );
+  console.log("");
 }
 
 // --- Main setup command ---
