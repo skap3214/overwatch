@@ -17,7 +17,7 @@
     "production": {
       "autoIncrement": true,
       "ios": {
-        "image": "macos-sequoia-xcode-26.1-latest"
+        "image": "macos-sequoia-15.6-xcode-26.1"
       }
     }
   },
