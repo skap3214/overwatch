@@ -72,8 +72,14 @@ echo ""
 echo "  ✓ Installed to ~/.overwatch/"
 echo "  ✓ Added 'overwatch' to PATH"
 echo ""
+
+# Make overwatch available in the current shell immediately
+export PATH="$HOME/.overwatch/bin:$PATH"
+
 echo "  Get started:"
-echo "    1. Open a new terminal (or run: source $SHELL_RC)"
-echo "    2. overwatch setup"
-echo "    3. overwatch start"
+echo "    overwatch setup"
+echo "    overwatch start"
+echo ""
+echo "  Note: if 'overwatch' is not found, run:"
+echo "    export PATH=\"\$HOME/.overwatch/bin:\$PATH\""
 echo ""

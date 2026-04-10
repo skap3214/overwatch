@@ -5,7 +5,7 @@ Voice-controlled orchestrator for tmux-hosted coding agent sessions. Control Cla
 ## Quick Setup
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/skap3214/overwatch/main/install.sh | bash
+eval "$(curl -fsSL https://raw.githubusercontent.com/skap3214/overwatch/main/install.sh)"
 ```
 
 Then:
