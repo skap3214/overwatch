@@ -129,16 +129,15 @@ function detectTerminals(): TerminalInfo[] {
 
 const TMUX_SCRIPT = `#!/bin/bash
 # overwatch: auto-start tmux session on new terminal tab
-# Source shell profile to get PATH (needed for iTerm2 and others that launch with minimal env)
-[ -f "\$HOME/.zshrc" ] && source "\$HOME/.zshrc" 2>/dev/null
-[ -f "\$HOME/.bashrc" ] && source "\$HOME/.bashrc" 2>/dev/null
+# Don't nest — if already inside tmux, just start a shell
+[ -n "\$TMUX" ] && exec "\${SHELL:-/bin/zsh}"
 export PATH="/opt/homebrew/bin:/usr/local/bin:\$PATH"
 TMUX_BIN="\${TMUX_BIN:-tmux}"
 n=0
-while \$TMUX_BIN has-session -t "\$n" 2>/dev/null; do
+while \$TMUX_BIN has-session -t "ow-\$n" 2>/dev/null; do
   n=$((n + 1))
 done
-exec \$TMUX_BIN new-session -s "\$n"
+exec \$TMUX_BIN new-session -s "ow-\$n"
 `;
 
 function installTmuxScript(): string {
@@ -276,13 +275,31 @@ function userHasCmux(): boolean {
 
 function userAlreadyHasTmux(): boolean {
   const home = homedir();
-  const configs = [
+
+  // Check shell rc files for tmux auto-start
+  const rcFiles = [
+    join(home, ".zshrc"),
+    join(home, ".bashrc"),
+    join(home, ".bash_profile"),
+    join(home, ".zprofile"),
+  ];
+  for (const rc of rcFiles) {
+    if (!existsSync(rc)) continue;
+    const content = readFileSync(rc, "utf-8");
+    // Look for tmux exec/attach patterns (not just any mention of tmux)
+    if (/^\s*(exec\s+)?tmux\b|tmux\s+new-session|tmux\s+attach/m.test(content)) {
+      return true;
+    }
+  }
+
+  // Check terminal configs
+  const termConfigs = [
     join(home, ".config", "ghostty", "config"),
     join(home, "Library", "Application Support", "com.mitchellh.ghostty", "config"),
     join(home, ".config", "kitty", "kitty.conf"),
     join(home, ".config", "alacritty", "alacritty.toml"),
   ];
-  for (const cfg of configs) {
+  for (const cfg of termConfigs) {
     if (!existsSync(cfg)) continue;
     const content = readFileSync(cfg, "utf-8");
     if (content.includes("tmux") && (content.includes("command") || content.includes("shell"))) {
