@@ -538,6 +538,9 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
     chalk.green("✓") + ` Config saved to ${getConfigDir()}/config.json`
   );
 
+  // Always write latest tmux-session.sh (updates existing installs)
+  installTmuxScript();
+
   // Terminal setup
   if (options.configureTerminal) {
     // Non-interactive terminal config
