@@ -241,16 +241,21 @@ function configureITerm2(scriptPath: string): boolean {
   const plistPath = join(homedir(), "Library", "Preferences", "com.googlecode.iterm2.plist");
   if (!existsSync(plistPath)) return false;
 
+  const { execSync } = require("node:child_process");
+
+  // Check if already configured
   try {
-    const { execSync } = require("node:child_process");
-    // Check if already configured
     const current = execSync(
       `/usr/libexec/PlistBuddy -c "Print :New\\ Bookmarks:0:Command" "${plistPath}"`,
       { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
     ).trim();
     if (current.includes("overwatch/tmux-session.sh")) return false;
+  } catch {
+    // Field doesn't exist or is empty — proceed with configuration
+  }
 
-    // Set custom command on the default profile (index 0)
+  // Set custom command on the default profile (index 0)
+  try {
     execSync(
       `/usr/libexec/PlistBuddy -c "Set :New\\ Bookmarks:0:Custom\\ Command Yes" "${plistPath}"`,
       { stdio: "ignore" }
