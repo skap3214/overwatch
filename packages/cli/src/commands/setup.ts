@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { execSync } from "node:child_process";
 import chalk from "chalk";
 import prompts from "prompts";
 import { loadConfig, saveConfig, getConfigDir } from "../config.js";
@@ -241,8 +242,6 @@ function configureITerm2(scriptPath: string): boolean {
   const plistPath = join(homedir(), "Library", "Preferences", "com.googlecode.iterm2.plist");
   if (!existsSync(plistPath)) return false;
 
-  const { execSync } = require("node:child_process");
-
   // Check if already configured
   try {
     const current = execSync(
@@ -342,7 +341,6 @@ async function setupTerminal(): Promise<void> {
   if (iterm && !needsConfig.includes(iterm)) {
     // Check iTerm2 via PlistBuddy
     try {
-      const { execSync } = require("node:child_process");
       const cmd = execSync(
         `/usr/libexec/PlistBuddy -c "Print :New\\ Bookmarks:0:Command" "${iterm.configPath}"`,
         { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
