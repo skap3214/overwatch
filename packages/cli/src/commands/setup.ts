@@ -464,8 +464,10 @@ async function setupTerminal(): Promise<void> {
     }
   }
 
-  console.log(chalk.bold("\n  Restart your terminal(s) for tmux auto-start to take effect."));
-  console.log(chalk.dim("  New tabs will automatically open a tmux session.\n"));
+  console.log("");
+  console.log(chalk.yellow.bold("  ⚠ You MUST restart your terminal(s) for tmux auto-start to take effect."));
+  console.log(chalk.yellow("  Close and reopen your terminal — new tabs will automatically open a tmux session."));
+  console.log("");
 }
 
 // --- Main setup command ---
@@ -556,10 +558,13 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
         case "Alacritty": configured = configureAlacritty(terminal.configPath, scriptPath); break;
         case "iTerm2": configured = configureITerm2(scriptPath); break;
       }
-      console.log(configured
-        ? chalk.green("✓") + ` Configured ${terminal.name}`
-        : chalk.dim(`  ${terminal.name} already configured`)
-      );
+      if (configured) {
+        console.log(chalk.green("✓") + ` Configured ${terminal.name}`);
+        console.log(chalk.yellow.bold("\n⚠ You MUST restart your terminal for tmux auto-start to take effect."));
+        console.log(chalk.yellow("  Close and reopen your terminal — new tabs will automatically open a tmux session."));
+      } else {
+        console.log(chalk.dim(`  ${terminal.name} already configured`));
+      }
     } else {
       console.log(chalk.yellow("!") + ` Terminal "${options.configureTerminal}" not found`);
     }
