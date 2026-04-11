@@ -320,12 +320,16 @@ async function setupTerminal(): Promise<void> {
     console.log(chalk.dim("  Overwatch will use tmux sessions alongside cmux.\n"));
   }
 
-  // Check if tmux is installed
+  // Install tmux if needed
   if (!isTmuxInstalled()) {
-    console.log(chalk.yellow("  !") + " tmux is not installed.");
-    console.log(chalk.dim("  Install it with: brew install tmux"));
-    console.log(chalk.dim("  Then re-run overwatch setup.\n"));
-    return;
+    console.log(chalk.yellow("  !") + " tmux is not installed. Installing...");
+    try {
+      execSync("brew install tmux", { stdio: "inherit" });
+      console.log(chalk.green("  ✓") + " tmux installed\n");
+    } catch {
+      console.log(chalk.red("  ✗") + " Failed to install tmux. Install manually: brew install tmux\n");
+      return;
+    }
   }
 
   console.log(
