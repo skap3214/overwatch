@@ -31,9 +31,9 @@ async function loginWithSDK(rl: ReturnType<typeof createInterface>): Promise<voi
   const response = await prompts({
     type: "select",
     name: "provider",
-    message: "Select an AI provider to authenticate",
+    message: "Select a provider to login",
     choices: providers.map((p: { id: string; name: string }) => ({
-      title: p.name,
+      title: auth.hasAuth(p.id) ? `${p.name} ${chalk.green("✓ logged in")}` : p.name,
       value: p.id,
     })),
   });
