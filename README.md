@@ -17,6 +17,22 @@ overwatch start    # start backend + show QR code
 
 Scan the QR code with the Overwatch iOS app (TestFlight).
 
+## Agent Setup (Claude Code, Codex, etc.)
+
+If you're using an AI coding agent, copy this prompt:
+
+```
+Install and configure Overwatch — a voice-controlled orchestrator for tmux coding sessions.
+
+1. Install: eval "$(curl -fsSL https://raw.githubusercontent.com/skap3214/overwatch/main/install.sh)"
+2. Run `pi` to configure the AI agent (follow the OAuth prompts, then /exit)
+3. Run: overwatch setup --non-interactive --deepgram-key <KEY> --cartesia-key <KEY> --configure-terminal ghostty
+   (Replace ghostty with your terminal: ghostty, kitty, alacritty, or iterm2)
+   (Get keys from https://console.deepgram.com and https://play.cartesia.ai)
+4. Open a new terminal tab (so tmux auto-starts), then run: overwatch start
+5. Scan the QR code with the Overwatch iOS app (TestFlight)
+```
+
 ## Manual Setup
 
 ```bash
