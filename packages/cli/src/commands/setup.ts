@@ -139,12 +139,15 @@ elif [ -d "/opt/homebrew" ]; then
 elif [ -d "/usr/local/Homebrew" ]; then
   eval "\$(/usr/local/bin/brew shellenv)"
 fi
-TMUX_BIN="\${TMUX_BIN:-tmux}"
+# Fall back to a normal shell if tmux isn't installed
+if ! command -v tmux &>/dev/null; then
+  exec "\${SHELL:-/bin/zsh}"
+fi
 n=0
-while \$TMUX_BIN has-session -t "ow-\$n" 2>/dev/null; do
+while tmux has-session -t "ow-\$n" 2>/dev/null; do
   n=$((n + 1))
 done
-exec \$TMUX_BIN new-session -s "ow-\$n"
+exec tmux new-session -s "ow-\$n"
 `;
 
 function installTmuxScript(): string {
