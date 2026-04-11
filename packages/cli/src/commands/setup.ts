@@ -111,9 +111,9 @@ function detectTerminals(): TerminalInfo[] {
     {
       name: "Alacritty",
       configPath: join(home, ".config", "alacritty", "alacritty.toml"),
-      detected: existsSync(
-        join(home, ".config", "alacritty", "alacritty.toml")
-      ),
+      detected:
+        existsSync(join(home, ".config", "alacritty", "alacritty.toml")) ||
+        existsSync("/Applications/Alacritty.app"),
     },
     {
       name: "cmux",
@@ -202,6 +202,9 @@ function configureKitty(configPath: string, scriptPath: string): boolean {
 }
 
 function configureAlacritty(configPath: string, scriptPath: string): boolean {
+  const configDir = configPath.substring(0, configPath.lastIndexOf("/"));
+  mkdirSync(configDir, { recursive: true });
+
   const content = existsSync(configPath)
     ? readFileSync(configPath, "utf-8")
     : "";
