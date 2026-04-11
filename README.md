@@ -2,6 +2,13 @@
 
 Voice-controlled orchestrator for tmux-hosted coding agent sessions. Control Claude Code, Codex, and other agents running on your Mac from your phone.
 
+## Prerequisites
+
+- macOS
+- [Homebrew](https://brew.sh) (`/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`)
+- Node.js 20+ (`brew install node`)
+- Git (`brew install git`)
+
 ## Quick Setup
 
 ```bash
