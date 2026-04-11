@@ -20,6 +20,54 @@ function ask(
   return new Promise((resolve) => rl.question(question, resolve));
 }
 
+// --- AI agent login via SDK ---
+
+async function loginWithSDK(rl: ReturnType<typeof createInterface>): Promise<void> {
+  const { AuthStorage } = await import("@mariozechner/pi-coding-agent");
+  const { execSync } = await import("node:child_process");
+  const auth = AuthStorage.create();
+  const providers = auth.getOAuthProviders();
+
+  const response = await prompts({
+    type: "select",
+    name: "provider",
+    message: "Select an AI provider to authenticate",
+    choices: providers.map((p: { id: string; name: string }) => ({
+      title: p.name,
+      value: p.id,
+    })),
+  });
+
+  if (!response.provider) {
+    console.log(chalk.dim("  Skipped — you can run `overwatch setup` later to configure.\n"));
+    return;
+  }
+
+  console.log("");
+
+  try {
+    await auth.login(response.provider, {
+      onAuth: (info: { url: string; instructions?: string }) => {
+        console.log(chalk.dim("  Opening browser for authentication..."));
+        if (info.instructions) console.log(chalk.dim(`  ${info.instructions}`));
+        try { execSync(`open "${info.url}"`); } catch {
+          console.log(`  Open this URL: ${info.url}`);
+        }
+      },
+      onPrompt: async (prompt: { message: string }) => {
+        return await ask(rl, `  ${prompt.message} `);
+      },
+      onProgress: (message: string) => {
+        console.log(chalk.dim(`  ${message}`));
+      },
+    });
+    console.log(chalk.green("\n  ✓") + " Authenticated successfully\n");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Authentication failed";
+    console.log(chalk.yellow("\n  !") + ` ${msg}\n`);
+  }
+}
+
 // --- Terminal detection and configuration ---
 
 interface TerminalInfo {
@@ -355,32 +403,7 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
     if (ni) {
       console.log(chalk.yellow("!") + " AI agent not configured — run `overwatch setup` interactively or `pi` to set up.");
     } else {
-      console.log(chalk.yellow("!") + " AI agent needs setup");
-      console.log(
-        chalk.dim("\n  Launching pi-coding-agent — type /login to authenticate.")
-      );
-      console.log(
-        chalk.dim("  When done, type /exit or press Ctrl+C to return to setup.\n")
-      );
-      const { spawnSync } = await import("node:child_process");
-      spawnSync("npx", ["@mariozechner/pi-coding-agent"], {
-        stdio: "inherit",
-        cwd: homedir(),
-      });
-      // Validate that auth was actually configured (not just empty file)
-      let authWorked = false;
-      if (existsSync(authPath)) {
-        try {
-          const postAuth = JSON.parse(readFileSync(authPath, "utf-8"));
-          authWorked = Object.keys(postAuth).length > 0 &&
-            Object.values(postAuth).some((v: any) => v && typeof v === "object" && Object.keys(v).length > 0);
-        } catch {}
-      }
-      if (authWorked) {
-        console.log(chalk.green("\n✓") + " AI agent configured");
-      } else {
-        console.log(chalk.yellow("\n!") + " Auth not completed. Run `pi` and use /login to authenticate, then re-run `overwatch setup`.");
-      }
+      await loginWithSDK(rl);
     }
   }
   console.log("");
