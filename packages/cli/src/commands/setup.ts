@@ -215,15 +215,22 @@ function configureAlacritty(configPath: string, scriptPath: string): boolean {
 
   backupFile(configPath);
 
-  if (content.includes("[shell]")) {
-    // Replace existing shell section
+  // Migrate deprecated [shell] to [terminal.shell] if present
+  if (content.includes("[terminal.shell]")) {
+    const updated = content.replace(
+      /\[terminal\.shell\]\s*\nprogram\s*=.*/,
+      `[terminal.shell]\nprogram = "${scriptPath}"`
+    );
+    writeFileSync(configPath, updated, "utf-8");
+  } else if (content.includes("[shell]")) {
+    // Legacy format — update to new format
     const updated = content.replace(
       /\[shell\]\s*\nprogram\s*=.*/,
-      `[shell]\nprogram = "${scriptPath}"`
+      `[terminal.shell]\nprogram = "${scriptPath}"`
     );
     writeFileSync(configPath, updated, "utf-8");
   } else {
-    const line = `\n# Added by overwatch — auto-start tmux on new tab\n[shell]\nprogram = "${scriptPath}"\n`;
+    const line = `\n# Added by overwatch — auto-start tmux on new tab\n[terminal.shell]\nprogram = "${scriptPath}"\n`;
     writeFileSync(configPath, content + line, "utf-8");
   }
   return true;
