@@ -297,12 +297,6 @@ async function setupTerminal(): Promise<void> {
     console.log(chalk.dim("  Overwatch will use tmux sessions alongside cmux.\n"));
   }
 
-  if (userAlreadyHasTmux()) {
-    console.log(chalk.green("  ✓") + " Detected existing tmux setup in your terminal config.");
-    console.log(chalk.dim("  Skipping — your current setup will work with Overwatch.\n"));
-    return;
-  }
-
   console.log(
     chalk.dim("  Configure your terminal to auto-start tmux on new tabs.")
   );
@@ -322,11 +316,44 @@ async function setupTerminal(): Promise<void> {
     return;
   }
 
+  // Check which terminals already have tmux configured
+  const needsConfig = configurable.filter((t) => {
+    if (!existsSync(t.configPath)) return true;
+    const content = readFileSync(t.configPath, "utf-8");
+    return !content.includes("tmux");
+  });
+  // iTerm2 doesn't have a simple text config — always show it
+  const iterm = configurable.find((t) => t.name === "iTerm2");
+  if (iterm && !needsConfig.includes(iterm)) {
+    // Check iTerm2 via PlistBuddy
+    try {
+      const { execSync } = require("node:child_process");
+      const cmd = execSync(
+        `/usr/libexec/PlistBuddy -c "Print :New\\ Bookmarks:0:Command" "${iterm.configPath}"`,
+        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
+      ).trim();
+      if (!cmd.includes("tmux")) needsConfig.push(iterm);
+    } catch {
+      needsConfig.push(iterm);
+    }
+  }
+
+  if (needsConfig.length === 0) {
+    console.log(chalk.green("  ✓") + " All detected terminals already have tmux configured.\n");
+    return;
+  }
+
+  // Show already-configured terminals
+  const alreadyDone = configurable.filter((t) => !needsConfig.includes(t));
+  for (const t of alreadyDone) {
+    console.log(chalk.green("  ✓") + chalk.dim(` ${t.name} — already configured`));
+  }
+
   const response = await prompts({
     type: "multiselect",
     name: "terminals",
     message: "Select terminals to configure",
-    choices: configurable.map((t) => ({
+    choices: needsConfig.map((t) => ({
       title: t.name,
       value: t.name,
       selected: true,
