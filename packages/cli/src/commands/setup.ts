@@ -47,10 +47,13 @@ function detectTerminals(): TerminalInfo[] {
       name: "Ghostty",
       configPath: existsSync(join(home, ".config", "ghostty", "config"))
         ? join(home, ".config", "ghostty", "config")
-        : join(home, "Library", "Application Support", "com.mitchellh.ghostty", "config"),
+        : existsSync(join(home, "Library", "Application Support", "com.mitchellh.ghostty", "config"))
+          ? join(home, "Library", "Application Support", "com.mitchellh.ghostty", "config")
+          : join(home, ".config", "ghostty", "config"), // default path if no config file yet
       detected:
         existsSync(join(home, ".config", "ghostty", "config")) ||
-        existsSync(join(home, "Library", "Application Support", "com.mitchellh.ghostty", "config")),
+        existsSync(join(home, "Library", "Application Support", "com.mitchellh.ghostty", "config")) ||
+        existsSync("/Applications/Ghostty.app"),
     },
     {
       name: "Kitty",
@@ -114,6 +117,10 @@ function backupFile(path: string): string {
 }
 
 function configureGhostty(configPath: string, scriptPath: string): boolean {
+  // Ensure config directory exists
+  const configDir = configPath.substring(0, configPath.lastIndexOf("/"));
+  mkdirSync(configDir, { recursive: true });
+
   const content = existsSync(configPath)
     ? readFileSync(configPath, "utf-8")
     : "";
