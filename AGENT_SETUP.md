@@ -10,43 +10,45 @@ Run: `eval "$(curl -fsSL https://raw.githubusercontent.com/skap3214/overwatch/ma
 
 If `overwatch` is not found after install, run: `export PATH="$HOME/.overwatch/bin:$PATH"`
 
-### Step 2: Run interactive setup
+### Step 2: Configure the AI agent
 
-Run: `overwatch setup`
+Check if `~/.pi/agent/auth.json` exists and is non-empty (not just `{}`). If it does, the agent is already configured — skip to Step 3.
 
-This will walk through:
-- AI agent login (select a provider like Anthropic, OpenAI, GitHub Copilot, etc. — opens browser for OAuth)
-- Deepgram API key (for speech-to-text — get one at https://console.deepgram.com)
-- Cartesia API key (for text-to-speech — get one at https://play.cartesia.ai)
-- Terminal configuration (select which terminals to auto-start tmux — installs tmux via brew if needed)
+If not, the user needs to authenticate with an AI provider. Run: `pi`
 
-Ask the user for their API keys before running setup so you can enter them when prompted.
-If the user doesn't have API keys yet, tell them to sign up at the URLs above.
+This launches the pi-coding-agent. The user should type `/login`, select their provider (Anthropic, OpenAI, GitHub Copilot, etc.), and complete the OAuth flow in their browser. Once authenticated, they should type `/exit` to return.
 
-### Step 3: Verify setup
+Verify it worked: `cat ~/.pi/agent/auth.json` should show provider credentials.
 
-After setup completes, check that:
-- `~/.overwatch/config.json` exists and has `deepgramApiKey` and `cartesiaApiKey`
-- `~/.pi/agent/auth.json` exists and is non-empty (has provider credentials)
-- `~/.overwatch/tmux-session.sh` exists (tmux auto-start script)
+### Step 3: Get API keys
 
-Tell the user: "Setup complete. Restart your terminal — new tabs will auto-start tmux sessions. Then run `overwatch start` to begin."
+Ask the user for:
+- **Deepgram API key** (for speech-to-text) — sign up at https://console.deepgram.com
+- **Cartesia API key** (for text-to-speech) — sign up at https://play.cartesia.ai
 
-### Step 4: Start Overwatch
+### Step 4: Configure terminal + API keys
 
-Run: `overwatch start`
+Ask the user which terminal they use. Supported terminals: Ghostty, Kitty, Alacritty, iTerm2, cmux.
 
-This starts the backend, connects to the relay, and shows a QR code.
-The user should scan the QR code with the Overwatch iOS app (available on TestFlight).
+If they use **cmux**, no terminal configuration is needed — cmux has built-in multiplexing. Run:
+```bash
+overwatch setup --non-interactive --deepgram-key <KEY> --cartesia-key <KEY>
+```
 
-### Non-interactive setup
-
-If you already have the keys:
-
+For all other terminals, run:
 ```bash
 overwatch setup --non-interactive --deepgram-key <KEY> --cartesia-key <KEY> --configure-terminal <terminal>
 ```
+Terminal names: `ghostty`, `kitty`, `alacritty`, `iterm2` (lowercase).
 
-Supported terminals: ghostty, kitty, alacritty, iterm2. cmux needs no configuration.
+### Step 5: Verify and start
 
-Note: `--non-interactive` skips the AI agent login. Run `overwatch setup` interactively for that, or run `pi` and use `/login`.
+Check the setup:
+- `cat ~/.overwatch/config.json` — should have `deepgramApiKey` and `cartesiaApiKey`
+- `cat ~/.pi/agent/auth.json` — should have provider credentials (not empty `{}`)
+
+If both look good, tell the user:
+> Setup complete! Restart your terminal (new tabs will auto-start tmux sessions), then run `overwatch start`. It will show a QR code — scan it with the Overwatch iOS app (TestFlight).
+
+If `~/.pi/agent/auth.json` is missing or empty, tell the user:
+> Almost done! Run `pi`, type `/login`, pick your AI provider, and complete the login. Then run `overwatch start`.
