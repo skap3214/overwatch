@@ -329,18 +329,53 @@ export async function setupCommand(): Promise<void> {
   // Check pi-coding-agent OAuth
   const authPath = join(homedir(), ".pi", "agent", "auth.json");
   if (existsSync(authPath)) {
-    console.log(
-      chalk.green("✓") +
-        " pi-coding-agent OAuth found at ~/.pi/agent/auth.json"
-    );
+    try {
+      const authData = JSON.parse(readFileSync(authPath, "utf-8"));
+      if (authData.anthropic) {
+        console.log(
+          chalk.green("✓") +
+            " Anthropic API auth configured"
+        );
+      } else {
+        console.log(
+          chalk.yellow("!") +
+            " Auth file found but no Anthropic credentials"
+        );
+      }
+    } catch {
+      console.log(
+        chalk.yellow("!") +
+          " Auth file found but could not be read"
+      );
+    }
   } else {
     console.log(
       chalk.yellow("!") +
-        " pi-coding-agent OAuth not found at ~/.pi/agent/auth.json"
+        " Anthropic API not configured"
     );
-    console.log(
-      "  Run your agent once to complete the OAuth flow, or set ANTHROPIC_API_KEY as fallback."
+    const runAgent = await ask(
+      rl,
+      `  Run pi-coding-agent to set up OAuth? (Y/n): `
     );
+    if (runAgent.trim().toLowerCase() !== "n") {
+      console.log(
+        chalk.dim("\n  Launching pi-coding-agent — complete the OAuth flow in your browser.")
+      );
+      console.log(
+        chalk.dim("  Once authenticated, type /exit or press Ctrl+C to return to setup.\n")
+      );
+      const { spawnSync } = await import("node:child_process");
+      spawnSync("npx", ["@mariozechner/pi-coding-agent"], {
+        stdio: "inherit",
+        cwd: homedir(),
+        shell: true,
+      });
+      if (existsSync(authPath)) {
+        console.log(chalk.green("\n✓") + " Anthropic API auth configured");
+      } else {
+        console.log(chalk.yellow("\n!") + " OAuth not completed — you can run the agent later to set it up.");
+      }
+    }
   }
   console.log("");
 
