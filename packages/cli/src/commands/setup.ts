@@ -346,8 +346,6 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
     if (!ni) {
       const reconfigure = await ask(rl, `  Reconfigure? (y/N): `);
       if (reconfigure.trim().toLowerCase() === "y") {
-        // Delete existing auth so pi triggers fresh login
-        try { const { unlinkSync } = await import("node:fs"); unlinkSync(authPath); } catch {}
         agentConfigured = false;
       }
     }
@@ -359,7 +357,7 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
     } else {
       console.log(chalk.yellow("!") + " AI agent needs setup");
       console.log(
-        chalk.dim("\n  Launching pi-coding-agent — use /login to authenticate.")
+        chalk.dim("\n  Launching pi-coding-agent — type /login to authenticate.")
       );
       console.log(
         chalk.dim("  When done, type /exit or press Ctrl+C to return to setup.\n")
