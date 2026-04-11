@@ -378,12 +378,20 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
       spawnSync("npx", ["@mariozechner/pi-coding-agent"], {
         stdio: "inherit",
         cwd: homedir(),
-        shell: true,
       });
+      // Validate that auth was actually configured (not just empty file)
+      let authWorked = false;
       if (existsSync(authPath)) {
+        try {
+          const postAuth = JSON.parse(readFileSync(authPath, "utf-8"));
+          authWorked = Object.keys(postAuth).length > 0 &&
+            Object.values(postAuth).some((v: any) => v && typeof v === "object" && Object.keys(v).length > 0);
+        } catch {}
+      }
+      if (authWorked) {
         console.log(chalk.green("\n✓") + " AI agent configured");
       } else {
-        console.log(chalk.yellow("\n!") + " Setup not completed — you can run `pi` later to set it up.");
+        console.log(chalk.yellow("\n!") + " Auth not completed. Run `pi` and use /login to authenticate, then re-run `overwatch setup`.");
       }
     }
   }
