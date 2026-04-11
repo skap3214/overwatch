@@ -469,7 +469,6 @@ async function setupTerminal(): Promise<void> {
 
 interface SetupOptions {
   deepgramKey?: string;
-  cartesiaKey?: string;
   configureTerminal?: string;
   nonInteractive?: boolean;
 }
@@ -521,25 +520,13 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
   // Deepgram
   if (options.deepgramKey) {
     config.deepgramApiKey = options.deepgramKey;
-    console.log(chalk.green("✓") + " Deepgram API key set");
+    console.log(chalk.green("✓") + " Deepgram API key set for STT + TTS");
   } else if (!ni) {
     const deepgram = await ask(
       rl,
-      `Deepgram API key${config.deepgramApiKey ? chalk.dim(" (enter to keep current)") : ""}: `
+      `Deepgram API key (used for STT + TTS)${config.deepgramApiKey ? chalk.dim(" (enter to keep current)") : ""}: `
     );
     if (deepgram.trim()) config.deepgramApiKey = deepgram.trim();
-  }
-
-  // Cartesia
-  if (options.cartesiaKey) {
-    config.cartesiaApiKey = options.cartesiaKey;
-    console.log(chalk.green("✓") + " Cartesia API key set");
-  } else if (!ni) {
-    const cartesia = await ask(
-      rl,
-      `Cartesia API key${config.cartesiaApiKey ? chalk.dim(" (enter to keep current)") : ""}: `
-    );
-    if (cartesia.trim()) config.cartesiaApiKey = cartesia.trim();
   }
 
   // Relay URL (non-interactive uses default)

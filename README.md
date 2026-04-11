@@ -48,7 +48,7 @@ npm run setup
 
 This will:
 - Check for pi-coding-agent OAuth (`~/.pi/agent/auth.json`)
-- Prompt for Deepgram and Cartesia API keys
+- Prompt for a Deepgram API key used for both STT and TTS
 - Configure your terminal (Ghostty, Kitty, iTerm2, or Alacritty) to auto-start tmux
 
 ### Start
@@ -75,15 +75,20 @@ iPhone → Relay (Cloudflare Worker) → Mac
 
 - **Phone**: voice input, text input, transcript display, TTS playback
 - **Relay**: stateless WebSocket forwarder, E2E encrypted with nacl.box
-- **Mac**: pi-coding-agent, Deepgram STT, Cartesia TTS, tmux control
+- **Mac**: pi-coding-agent, Deepgram STT/TTS, tmux control
 
 ## API Keys Required
 
 | Service | Purpose | Get one at |
 |---|---|---|
 | Anthropic | Agent (via pi-coding-agent OAuth) | Auto-configured on first agent run |
-| Deepgram | Speech-to-text | https://console.deepgram.com |
-| Cartesia | Text-to-speech | https://play.cartesia.ai |
+| Deepgram | Speech-to-text + text-to-speech | https://console.deepgram.com |
+
+## Speech Stack
+
+- Overwatch uses Deepgram for prerecorded STT and streaming TTS.
+- TTS streams PCM audio chunks as the assistant text arrives, rather than waiting for the full reply.
+- The default Deepgram TTS voice is `aura-2-aries-en`.
 
 ## Project Structure
 

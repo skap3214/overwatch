@@ -43,7 +43,6 @@ function startBackend(port: number, config: import("../config.js").OverwatchConf
       ...process.env,
       PORT: String(port),
       ...(config.deepgramApiKey && { DEEPGRAM_API_KEY: config.deepgramApiKey }),
-      ...(config.cartesiaApiKey && { CARTESIA_API_KEY: config.cartesiaApiKey }),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

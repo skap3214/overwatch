@@ -6,7 +6,7 @@ import { Hono } from "hono";
 import { loadConfig } from "./config.js";
 import { PiCodingAgentHarness } from "./harness/pi-coding-agent.js";
 import { DeepgramSttAdapter } from "./stt/deepgram.js";
-import { CartesiaTtsAdapter } from "./tts/cartesia.js";
+import { DeepgramTtsAdapter } from "./tts/deepgram.js";
 import { TurnCoordinator } from "./orchestrator/turn-coordinator.js";
 import { createSttHandler } from "./routes/stt.js";
 import { attachRealtimeServer } from "./realtime/socket-server.js";
@@ -30,8 +30,9 @@ const MIME_TYPES: Record<string, string> = {
 
 const config = loadConfig();
 const harness = new PiCodingAgentHarness();
-const tts = new CartesiaTtsAdapter({
-  apiKey: config.CARTESIA_API_KEY,
+const tts = new DeepgramTtsAdapter({
+  apiKey: config.DEEPGRAM_API_KEY,
+  model: config.DEEPGRAM_TTS_MODEL,
 });
 const coordinator = new TurnCoordinator(harness, tts);
 const schedulerRunner = new SchedulerRunner(coordinator);

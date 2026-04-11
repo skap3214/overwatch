@@ -18,7 +18,6 @@ export async function statusCommand(): Promise<void> {
     `  Backend:  ${backendOk ? chalk.green("running") : chalk.red("not running")} (localhost:${port})`
   );
   console.log(`  Relay:    ${chalk.dim(config.relayUrl ?? "not configured")}`);
-  console.log(`  Deepgram: ${config.deepgramApiKey ? chalk.green("configured") : chalk.red("not set")}`);
-  console.log(`  Cartesia: ${config.cartesiaApiKey ? chalk.green("configured") : chalk.red("not set")}`);
+  console.log(`  Deepgram: ${config.deepgramApiKey ? chalk.green("configured") : chalk.red("not set")} (STT + TTS)`);
   console.log("");
 }

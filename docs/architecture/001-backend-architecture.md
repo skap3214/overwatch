@@ -3,7 +3,7 @@
 **Status:** ACCEPTED
 **Date:** 2026-04-05
 **Scope:** Current backend architecture as implemented in the repository
-**Related Code:** [../../src/index.ts](../../src/index.ts), [../../src/config.ts](../../src/config.ts), [../../src/harness/claude-code-cli.ts](../../src/harness/claude-code-cli.ts), [../../src/harness/pi-coding-agent.ts](../../src/harness/pi-coding-agent.ts), [../../src/harness/types.ts](../../src/harness/types.ts), [../../src/extensions/scheduler.ts](../../src/extensions/scheduler.ts), [../../src/extensions/memory.ts](../../src/extensions/memory.ts), [../../src/agent/memory/index.ts](../../src/agent/memory/index.ts), [../../src/orchestrator/turn-coordinator.ts](../../src/orchestrator/turn-coordinator.ts), [../../src/tasks/scheduler-runner.ts](../../src/tasks/scheduler-runner.ts), [../../src/notifications/store.ts](../../src/notifications/store.ts), [../../src/realtime/socket-server.ts](../../src/realtime/socket-server.ts), [../../src/stt/deepgram.ts](../../src/stt/deepgram.ts), [../../src/stt/types.ts](../../src/stt/types.ts), [../../src/tts/cartesia.ts](../../src/tts/cartesia.ts), [../../src/tts/types.ts](../../src/tts/types.ts), [../../src/shared/events.ts](../../src/shared/events.ts), [../../src/shared/async-queue.ts](../../src/shared/async-queue.ts)
+**Related Code:** [../../src/index.ts](../../src/index.ts), [../../src/config.ts](../../src/config.ts), [../../src/harness/claude-code-cli.ts](../../src/harness/claude-code-cli.ts), [../../src/harness/pi-coding-agent.ts](../../src/harness/pi-coding-agent.ts), [../../src/harness/types.ts](../../src/harness/types.ts), [../../src/extensions/scheduler.ts](../../src/extensions/scheduler.ts), [../../src/extensions/memory.ts](../../src/extensions/memory.ts), [../../src/agent/memory/index.ts](../../src/agent/memory/index.ts), [../../src/orchestrator/turn-coordinator.ts](../../src/orchestrator/turn-coordinator.ts), [../../src/tasks/scheduler-runner.ts](../../src/tasks/scheduler-runner.ts), [../../src/notifications/store.ts](../../src/notifications/store.ts), [../../src/realtime/socket-server.ts](../../src/realtime/socket-server.ts), [../../src/stt/deepgram.ts](../../src/stt/deepgram.ts), [../../src/stt/types.ts](../../src/stt/types.ts), [../../src/tts/deepgram.ts](../../src/tts/deepgram.ts), [../../src/tts/types.ts](../../src/tts/types.ts), [../../src/shared/events.ts](../../src/shared/events.ts), [../../src/shared/async-queue.ts](../../src/shared/async-queue.ts)
 **Related Docs:** [../plans/mvp-plan-2026-04-05.md](../plans/mvp-plan-2026-04-05.md), [../research/initial-research-2026-04-05.md](../research/initial-research-2026-04-05.md), [../insights.md](../insights.md)
 
 ## Decision
@@ -55,8 +55,8 @@ This is the key architectural rule:
 
 ### TTS
 
-- Provider: Cartesia
-- Mode: WebSocket streaming TTS with incremental text continuations
+- Provider: Deepgram
+- Mode: WebSocket streaming TTS with buffered incremental text chunks and final flush
 - Output currently returned as raw PCM chunks at `24000 Hz`
 
 ## Module Boundaries
@@ -152,13 +152,13 @@ Important constraint:
 Files:
 
 - `src/tts/types.ts`
-- `src/tts/cartesia.ts`
+- `src/tts/deepgram.ts`
 - `src/shared/async-queue.ts`
 
 Purpose:
 
 - accept streaming text chunks from the harness
-- feed them into Cartesia incrementally
+- feed them into Deepgram incrementally
 - emit normalized audio events as chunks arrive
 
 Current interface:
@@ -176,13 +176,13 @@ Current output event types:
 - `marker`
 - `error`
 
-Current Cartesia-specific behavior:
+Current Deepgram-specific behavior:
 
-- connects to Cartesia over WebSocket
-- uses model `sonic-3`
-- uses fixed voice ID `a167e0f3-df7e-4d52-a9c3-f949145efdab`
-- sends raw PCM `s16le` at `24000 Hz`
-- uses `continue: true` for intermediate chunks and a final empty chunk with `continue: false`
+- connects to Deepgram over WebSocket
+- uses model `aura-2-aries-en` by default
+- sends raw PCM `linear16` at `24000 Hz`
+- batches small harness deltas into larger text chunks before sending `Speak` messages
+- sends `Flush` at the end of the turn so Deepgram emits the remaining audio
 
 Important frontend implication:
 
@@ -192,9 +192,9 @@ Important frontend implication:
   - add a backend audio packaging layer, or
   - add a browser playback path for streamed PCM
 
-For mobile-first web, the safer path is likely:
+For mobile-first web, the safer path is still:
 
-- keep Cartesia as the provider
+- keep the provider output as streamed PCM
 - wrap streamed PCM into a frontend-friendly transport contract before building the polished UI
 
 ### 4. Shared Contracts
@@ -363,12 +363,12 @@ File:
 Current environment variables:
 
 - `PORT`
-- `CARTESIA_API_KEY`
 - `DEEPGRAM_API_KEY`
+- `DEEPGRAM_TTS_MODEL`
 
-Current Cartesia voice choice:
+Current Deepgram TTS voice choice:
 
-- voice ID is hardcoded in `src/tts/cartesia.ts`
+- model name defaults in `src/tts/deepgram.ts`
 
 This is a deliberate temporary choice and should be treated as implementation detail, not frontend configuration.
 

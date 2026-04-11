@@ -23,8 +23,7 @@ Verify it worked: `cat ~/.pi/agent/auth.json` should show provider credentials.
 ### Step 3: Get API keys
 
 Ask the user for:
-- **Deepgram API key** (for speech-to-text) — sign up at https://console.deepgram.com
-- **Cartesia API key** (for text-to-speech) — sign up at https://play.cartesia.ai
+- **Deepgram API key** (for speech-to-text and text-to-speech) — sign up at https://console.deepgram.com
 
 ### Step 4: Configure terminal + API keys
 
@@ -32,19 +31,19 @@ Ask the user which terminal they use. Supported terminals: Ghostty, Kitty, Alacr
 
 If they use **cmux**, no terminal configuration is needed — cmux has built-in multiplexing. Run:
 ```bash
-overwatch setup --non-interactive --deepgram-key <KEY> --cartesia-key <KEY>
+overwatch setup --non-interactive --deepgram-key <KEY>
 ```
 
 For all other terminals, run:
 ```bash
-overwatch setup --non-interactive --deepgram-key <KEY> --cartesia-key <KEY> --configure-terminal <terminal>
+overwatch setup --non-interactive --deepgram-key <KEY> --configure-terminal <terminal>
 ```
 Terminal names: `ghostty`, `kitty`, `alacritty`, `iterm2` (lowercase).
 
 ### Step 5: Verify and start
 
 Check the setup:
-- `cat ~/.overwatch/config.json` — should have `deepgramApiKey` and `cartesiaApiKey`
+- `cat ~/.overwatch/config.json` — should have `deepgramApiKey`
 - `cat ~/.pi/agent/auth.json` — should have provider credentials (not empty `{}`)
 
 If both look good, tell the user:

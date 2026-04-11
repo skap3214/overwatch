@@ -7,7 +7,6 @@ const CONFIG_PATH = join(CONFIG_DIR, "config.json");
 
 export interface OverwatchConfig {
   deepgramApiKey?: string;
-  cartesiaApiKey?: string;
   relayUrl?: string;
   backendPort?: number;
 }
