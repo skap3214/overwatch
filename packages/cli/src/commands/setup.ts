@@ -326,43 +326,29 @@ export async function setupCommand(): Promise<void> {
   console.log(chalk.dim("───────────────"));
   console.log("");
 
-  // Check pi-coding-agent OAuth
-  const authPath = join(homedir(), ".pi", "agent", "auth.json");
+  // Check pi-coding-agent setup
+  const piDir = join(homedir(), ".pi", "agent");
+  const authPath = join(piDir, "auth.json");
   if (existsSync(authPath)) {
-    try {
-      const authData = JSON.parse(readFileSync(authPath, "utf-8"));
-      if (authData.anthropic) {
-        console.log(
-          chalk.green("✓") +
-            " Anthropic API auth configured"
-        );
-      } else {
-        console.log(
-          chalk.yellow("!") +
-            " Auth file found but no Anthropic credentials"
-        );
-      }
-    } catch {
-      console.log(
-        chalk.yellow("!") +
-          " Auth file found but could not be read"
-      );
-    }
+    console.log(
+      chalk.green("✓") +
+        " AI agent configured"
+    );
   } else {
     console.log(
       chalk.yellow("!") +
-        " Anthropic API not configured"
+        " AI agent not configured"
     );
     const runAgent = await ask(
       rl,
-      `  Run pi-coding-agent to set up OAuth? (Y/n): `
+      `  Launch pi-coding-agent to set up? (Y/n): `
     );
     if (runAgent.trim().toLowerCase() !== "n") {
       console.log(
-        chalk.dim("\n  Launching pi-coding-agent — complete the OAuth flow in your browser.")
+        chalk.dim("\n  Launching pi-coding-agent — follow the prompts to configure your provider.")
       );
       console.log(
-        chalk.dim("  Once authenticated, type /exit or press Ctrl+C to return to setup.\n")
+        chalk.dim("  When done, type /exit or press Ctrl+C to return to setup.\n")
       );
       const { spawnSync } = await import("node:child_process");
       spawnSync("npx", ["@mariozechner/pi-coding-agent"], {
@@ -371,9 +357,9 @@ export async function setupCommand(): Promise<void> {
         shell: true,
       });
       if (existsSync(authPath)) {
-        console.log(chalk.green("\n✓") + " Anthropic API auth configured");
+        console.log(chalk.green("\n✓") + " AI agent configured");
       } else {
-        console.log(chalk.yellow("\n!") + " OAuth not completed — you can run the agent later to set it up.");
+        console.log(chalk.yellow("\n!") + " Setup not completed — you can run `pi` later to set it up.");
       }
     }
   }
