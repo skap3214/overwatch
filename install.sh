@@ -84,10 +84,9 @@ echo ""
 # Make overwatch available in the current shell immediately
 export PATH="$HOME/.overwatch/bin:$PATH"
 
-echo "  Get started:"
-echo "    overwatch setup"
-echo "    overwatch start"
-echo ""
 echo "  Note: if 'overwatch' is not found, run:"
 echo "    export PATH=\"\$HOME/.overwatch/bin:\$PATH\""
 echo ""
+
+# Run setup immediately
+overwatch setup
