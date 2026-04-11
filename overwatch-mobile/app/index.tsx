@@ -16,6 +16,7 @@ import { TranscriptView } from "../src/components/TranscriptView";
 import { InputBar } from "../src/components/InputBar";
 import { PTTButton } from "../src/components/PTTButton";
 import { SettingsPage } from "../src/components/SettingsPage";
+import { QRScanner } from "../src/components/QRScanner";
 import { useRealtimeConnection } from "../src/hooks/use-realtime-connection";
 import "../global.css";
 
@@ -28,6 +29,7 @@ export default function App() {
 
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showQR, setShowQR] = useState(false);
 
   useEffect(() => {
     const showSub = Keyboard.addListener("keyboardWillShow", () => setKeyboardVisible(true));
@@ -147,20 +149,39 @@ export default function App() {
             <Text style={{ color: colors.textDim, fontFamily: "IosevkaAile-Regular", fontSize: 15, textAlign: "center" }}>
               {connectionStatus === "reconnecting" ? "Reconnecting to your Mac..." : connectionStatus === "connecting" ? "Connecting..." : "Not connected"}
             </Text>
-            <Pressable
-              onPress={goToSettings}
-              style={{
-                backgroundColor: colors.accent,
-                paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12,
-              }}
-            >
-              <Text style={{ color: colors.bg, fontFamily: "IosevkaAile-Medium", fontSize: 14 }}>
-                {connectionStatus === "disconnected" ? "Connect" : "Settings"}
-              </Text>
-            </Pressable>
+            {connectionStatus === "disconnected" ? (
+              <Pressable
+                onPress={() => setShowQR(true)}
+                style={{
+                  backgroundColor: colors.accent,
+                  paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12,
+                }}
+              >
+                <Text style={{ color: colors.bg, fontFamily: "IosevkaAile-Medium", fontSize: 14 }}>
+                  Connect
+                </Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                onPress={goToSettings}
+                style={{
+                  backgroundColor: colors.accent,
+                  paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12,
+                }}
+              >
+                <Text style={{ color: colors.bg, fontFamily: "IosevkaAile-Medium", fontSize: 14 }}>
+                  Settings
+                </Text>
+              </Pressable>
+            )}
           </View>
         )}
       </KeyboardAvoidingView>
+
+      {/* QR Scanner Modal */}
+      <Modal visible={showQR} animationType="slide">
+        <QRScanner onClose={() => setShowQR(false)} />
+      </Modal>
 
       {/* Settings Modal */}
       <Modal visible={showSettings} animationType="slide">
