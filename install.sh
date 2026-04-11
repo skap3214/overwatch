@@ -28,11 +28,13 @@ echo "  ✓ npm $(npm -v)"
 echo ""
 
 # Clone or update
-if [ -d "$INSTALL_DIR" ]; then
+if [ -d "$INSTALL_DIR/.git" ]; then
   echo "  Updating existing installation..."
   cd "$INSTALL_DIR"
-  git pull --quiet
+  git fetch --depth 1 origin main --quiet
+  git reset --hard origin/main --quiet 2>/dev/null || git reset --hard FETCH_HEAD --quiet
 else
+  rm -rf "$INSTALL_DIR"
   echo "  Cloning overwatch..."
   git clone --quiet --depth 1 "$REPO" "$INSTALL_DIR"
   cd "$INSTALL_DIR"
