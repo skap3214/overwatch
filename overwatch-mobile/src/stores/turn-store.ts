@@ -31,6 +31,7 @@ type TurnStore = {
   handleError: (message: string) => void;
   setAbortController: (controller: AbortController | null) => void;
   cancelTurn: () => void;
+  clearMessages: () => void;
   loadSessions: () => Promise<void>;
   switchSession: (sessionId: string) => Promise<void>;
   newSession: () => Promise<void>;
@@ -152,6 +153,10 @@ export const useTurnStore = create<TurnStore>((set, get) => ({
     set({ abortController: null, pendingMessageId: null, pendingText: "", turnState: "idle" });
   },
 
+  clearMessages: () => {
+    set({ messages: [], pendingMessageId: null, pendingText: "", turnState: "idle" });
+  },
+
   loadSessions: async () => {
     let sessions = await loadSessionsIndex();
     let activeId: string | null = null;
@@ -179,13 +184,21 @@ export const useTurnStore = create<TurnStore>((set, get) => ({
   },
 
   switchSession: async (sessionId: string) => {
-    const { sessions } = get();
+    const { sessions, activeSessionId: currentId, messages: currentMessages, abortController } = get();
     if (!sessions.find((s) => s.id === sessionId)) return;
+
+    // Cancel any in-progress turn so streaming events don't bleed
+    if (abortController) abortController.abort();
+
+    // Save current session's messages before switching
+    if (currentId && currentMessages.length > 0) {
+      await saveMessages(currentId, currentMessages);
+    }
 
     const messages = await loadMessages(sessionId);
     restoreIdCounter(messages);
 
-    set({ activeSessionId: sessionId, messages, pendingMessageId: null, pendingText: "", turnState: "idle" });
+    set({ activeSessionId: sessionId, messages, pendingMessageId: null, pendingText: "", turnState: "idle", abortController: null });
     await AsyncStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
   },
 

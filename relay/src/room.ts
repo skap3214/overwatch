@@ -3,36 +3,53 @@
  *
  * Holds up to 2 WebSocket connections (host + client).
  * Forwards all frames (text and binary) between them without inspection.
- * Text frames are used during key exchange. Binary frames are encrypted messages.
+ *
+ * Control plane (plaintext text frames):
+ *   ping/pong     — keepalive between each endpoint and the DO
+ *   peer.disconnected — instant notification when the other side dies
+ *   bridge.status — end-to-end readiness signal from host to client
+ *
+ * Data plane (binary frames): E2E encrypted, forwarded opaquely.
+ *
+ * Uses state.getWebSockets() to survive hibernation.
  */
 
 type Role = "host" | "client";
 
-interface ConnectedPeer {
-  socket: WebSocket;
-  role: Role;
+interface ControlFrame {
+  type: string;
+  [key: string]: unknown;
+}
+
+function tryParseControl(message: string): ControlFrame | null {
+  try {
+    const parsed = JSON.parse(message);
+    if (typeof parsed === "object" && parsed !== null && typeof parsed.type === "string") {
+      return parsed as ControlFrame;
+    }
+  } catch {}
+  return null;
 }
 
 export class Room implements DurableObject {
-  private peers: ConnectedPeer[] = [];
-  private roomCode: string | null = null;
-  private cleanupTimer: ReturnType<typeof setTimeout> | null = null;
+  private alarmScheduled = false;
+  private hostPublicKey: string | null = null;
 
   constructor(
     private readonly state: DurableObjectState,
-    private readonly env: Record<string, unknown>
+    private readonly _env: Record<string, unknown>
   ) {}
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
-    // Generate room code on first request
-    if (!this.roomCode) {
-      this.roomCode = this.generateRoomCode();
-    }
-
-    if (url.pathname.endsWith("/info")) {
-      return Response.json({ room: this.roomCode, peers: this.peers.length });
+    // Join info — returns host public key for manual code entry
+    if (url.pathname.endsWith("/join")) {
+      const allSockets = this.state.getWebSockets();
+      return Response.json({
+        peers: allSockets.length,
+        hostPublicKey: this.hostPublicKey,
+      });
     }
 
     const upgradeHeader = request.headers.get("Upgrade");
@@ -40,28 +57,24 @@ export class Room implements DurableObject {
       return new Response("Expected WebSocket", { status: 426 });
     }
 
-    // Determine role from path
     const role: Role = url.pathname.includes("/host") ? "host" : "client";
 
-    // If the same role reconnects, replace the old connection
-    const existing = this.peers.find((p) => p.role === role);
-    if (existing) {
-      try { existing.socket.close(1000, "replaced"); } catch {}
-      this.peers = this.peers.filter((p) => p.role !== role);
+    // Store host's public key for manual code entry
+    if (role === "host") {
+      const hpk = url.searchParams.get("hostPublicKey");
+      if (hpk) this.hostPublicKey = hpk;
+    }
+
+    // Replace existing connection for this role
+    const existing = this.state.getWebSockets(role);
+    for (const ws of existing) {
+      try { ws.close(1000, "replaced"); } catch {}
     }
 
     const pair = new WebSocketPair();
     const [clientWs, serverWs] = pair;
 
     this.state.acceptWebSocket(serverWs, [role]);
-
-    this.peers.push({ socket: serverWs, role });
-
-    // Cancel cleanup if a peer reconnects
-    if (this.cleanupTimer) {
-      clearTimeout(this.cleanupTimer);
-      this.cleanupTimer = null;
-    }
 
     return new Response(null, { status: 101, webSocket: clientWs });
   }
@@ -70,62 +83,109 @@ export class Room implements DurableObject {
     ws: WebSocket,
     message: string | ArrayBuffer
   ): Promise<void> {
-    // Forward to the other peer
-    const other = this.peers.find((p) => p.socket !== ws);
-    if (!other) return;
-
-    try {
-      if (typeof message === "string") {
-        other.socket.send(message);
-      } else {
-        other.socket.send(message);
-      }
-    } catch {
-      // Other side disconnected
+    // Binary frames: always forward opaquely (encrypted data plane)
+    if (typeof message !== "string") {
+      this.forwardToPeer(ws, message);
+      return;
     }
+
+    // Text frames: check for control plane messages
+    const ctrl = tryParseControl(message);
+    if (ctrl) {
+      switch (ctrl.type) {
+        case "ping":
+          // Reply with pong, update heartbeat timestamp
+          ws.send(JSON.stringify({ type: "pong" }));
+          ws.serializeAttachment({ lastPingTs: Date.now() });
+          this.ensureAlarm();
+          return;
+
+        case "pong":
+          // Should not arrive here (DO sends pongs, not receives), ignore
+          return;
+
+        case "bridge.status": {
+          // Forward from host to all clients (no caching)
+          const clients = this.state.getWebSockets("client");
+          for (const client of clients) {
+            try { client.send(message); } catch {}
+          }
+          return;
+        }
+      }
+    }
+
+    // All other text frames (client.hello, etc): forward to peer
+    this.forwardToPeer(ws, message);
   }
 
   async webSocketClose(
     ws: WebSocket,
     code: number,
     reason: string,
-    wasClean: boolean
+    _wasClean: boolean
   ): Promise<void> {
-    this.removePeer(ws);
-    this.scheduleCleanup();
+    // Don't notify peer for "replaced" closes (same role reconnecting)
+    if (reason === "replaced") return;
+
+    this.notifyPeerDisconnected(ws);
   }
 
-  async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
-    this.removePeer(ws);
-    this.scheduleCleanup();
+  async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
+    this.notifyPeerDisconnected(ws);
   }
 
-  private removePeer(ws: WebSocket): void {
-    this.peers = this.peers.filter((p) => p.socket !== ws);
-  }
+  async alarm(): Promise<void> {
+    this.alarmScheduled = false;
+    const now = Date.now();
+    const allSockets = this.state.getWebSockets();
+    let remaining = 0;
 
-  private scheduleCleanup(): void {
-    if (this.peers.length > 0) return;
-    if (this.cleanupTimer) return;
+    for (const ws of allSockets) {
+      const attachment = ws.deserializeAttachment() as { lastPingTs?: number } | null;
+      const lastPing = attachment?.lastPingTs ?? 0;
 
-    // Give 30s for reconnection before the DO gets evicted
-    this.cleanupTimer = setTimeout(() => {
-      // No peers left — DO will be evicted by the runtime
-      this.cleanupTimer = null;
-    }, 30_000);
-  }
-
-  private generateRoomCode(): string {
-    const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // no I, O (ambiguous)
-    const digits = "0123456789";
-    let code = "";
-    for (let i = 0; i < 4; i++) {
-      code += letters[Math.floor(Math.random() * letters.length)];
+      if (now - lastPing > 45_000) {
+        // No ping in 45s — close as dead
+        try { ws.close(4000, "heartbeat_timeout"); } catch {}
+      } else {
+        remaining++;
+      }
     }
-    code += "-";
-    for (let i = 0; i < 4; i++) {
-      code += digits[Math.floor(Math.random() * digits.length)];
+
+    // Reschedule if sockets remain
+    if (remaining > 0) {
+      this.ensureAlarm();
     }
-    return code;
   }
+
+  private forwardToPeer(sender: WebSocket, message: string | ArrayBuffer): void {
+    const senderTags = this.state.getTags(sender);
+    const senderRole: Role = senderTags.includes("host") ? "host" : "client";
+    const otherRole: Role = senderRole === "host" ? "client" : "host";
+
+    const others = this.state.getWebSockets(otherRole);
+    for (const other of others) {
+      try { other.send(message); } catch {}
+    }
+  }
+
+  private notifyPeerDisconnected(ws: WebSocket): void {
+    const tags = this.state.getTags(ws);
+    const role: Role = tags.includes("host") ? "host" : "client";
+    const otherRole: Role = role === "host" ? "client" : "host";
+
+    const others = this.state.getWebSockets(otherRole);
+    const notification = JSON.stringify({ type: "peer.disconnected", role });
+    for (const other of others) {
+      try { other.send(notification); } catch {}
+    }
+  }
+
+  private ensureAlarm(): void {
+    if (this.alarmScheduled) return;
+    this.alarmScheduled = true;
+    this.state.storage.setAlarm(Date.now() + 60_000);
+  }
+
 }

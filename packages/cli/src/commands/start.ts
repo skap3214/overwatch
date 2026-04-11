@@ -121,6 +121,12 @@ export async function startCommand(): Promise<void> {
     onPhoneDisconnected: () => {
       console.log(chalk.yellow("  Phone disconnected. Waiting for reconnect..."));
     },
+    onReconnecting: (target) => {
+      console.log(chalk.yellow(`  ${target === "relay" ? "Relay" : "Backend"} connection lost, reconnecting...`));
+    },
+    onReconnected: (target) => {
+      console.log(chalk.green(`  ✓ ${target === "relay" ? "Relay" : "Backend"} reconnected`));
+    },
     onError: (err) => {
       console.error(chalk.red(`  Error: ${err.message}`));
     },
@@ -132,7 +138,6 @@ export async function startCommand(): Promise<void> {
   const qrData = JSON.stringify({
     relay: relayUrl,
     room: room.room,
-    roomId: room.roomId,
     hostPublicKey: bridge.publicKeyBase64,
   });
 

@@ -1,6 +1,6 @@
 export type TurnState = "idle" | "recording" | "processing" | "playing";
 
-export type ConnectionStatus = "disconnected" | "connected" | "error";
+export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting";
 
 export type MessageRole = "user" | "assistant" | "tool_call" | "error";
 

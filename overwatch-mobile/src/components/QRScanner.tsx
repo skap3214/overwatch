@@ -23,18 +23,16 @@ export function QRScanner({ onClose }: Props) {
       const parsed = JSON.parse(data) as {
         relay?: string;
         room?: string;
-        roomId?: string;
         hostPublicKey?: string;
       };
 
-      if (!parsed.relay || !parsed.room || !parsed.roomId || !parsed.hostPublicKey) {
+      if (!parsed.relay || !parsed.room || !parsed.hostPublicKey) {
         throw new Error("Invalid QR code");
       }
 
       const config: RelayConfig = {
         relayUrl: parsed.relay,
         room: parsed.room,
-        roomId: parsed.roomId,
         hostPublicKey: parsed.hostPublicKey,
       };
 

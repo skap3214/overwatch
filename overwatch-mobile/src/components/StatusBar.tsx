@@ -1,15 +1,16 @@
-import React from "react";
-import { View, Text, Pressable } from "react-native";
+import React, { useEffect, useRef } from "react";
+import { View, Text, Pressable, Animated } from "react-native";
 import { useConnectionStore } from "../stores/connection-store";
 import { useNotificationsStore } from "../stores/notifications-store";
 import { useTurnStore } from "../stores/turn-store";
 import { useColors } from "../theme";
 import { GlassSurface } from "./GlassSurface";
-import { Settings, Menu } from "lucide-react-native";
+import { Settings, Plus } from "lucide-react-native";
+import type { ConnectionStatus } from "../types";
 
 type Props = {
   onSettingsPress: () => void;
-  onSessionsPress: () => void;
+  onNewChat: () => void;
 };
 
 const TURN_LABELS: Record<string, string> = {
@@ -19,15 +20,45 @@ const TURN_LABELS: Record<string, string> = {
   playing: "speaking...",
 };
 
-export function StatusBar({ onSettingsPress, onSessionsPress }: Props) {
+const CONNECTION_LABELS: Record<ConnectionStatus, string> = {
+  connected: "Connected",
+  connecting: "Connecting...",
+  reconnecting: "Reconnecting...",
+  disconnected: "Disconnected",
+};
+
+const AMBER = "#f59e0b";
+
+export function StatusBar({ onSettingsPress, onNewChat }: Props) {
   const colors = useColors();
   const connectionStatus = useConnectionStore((s) => s.connectionStatus);
   const turnState = useTurnStore((s) => s.turnState);
   const unreadCount = useNotificationsStore((s) => s.unreadCount());
 
-  const dotColor = connectionStatus === "connected" ? colors.success
-    : connectionStatus === "error" ? colors.error : colors.textDim;
-  const label = TURN_LABELS[turnState] || connectionStatus;
+  const dotColor =
+    connectionStatus === "connected" ? colors.success
+    : connectionStatus === "reconnecting" ? AMBER
+    : connectionStatus === "connecting" ? colors.accent
+    : colors.textDim;
+
+  const turnLabel = TURN_LABELS[turnState];
+  const label = turnLabel || CONNECTION_LABELS[connectionStatus];
+
+  // Pulse animation for reconnecting
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (connectionStatus === "reconnecting") {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+    pulseAnim.setValue(1);
+  }, [connectionStatus, pulseAnim]);
 
   return (
     <View
@@ -41,19 +72,27 @@ export function StatusBar({ onSettingsPress, onSessionsPress }: Props) {
         zIndex: 10,
       }}
     >
-      <Pressable onPress={onSessionsPress} hitSlop={16}>
+      <Pressable onPress={onNewChat} hitSlop={16}>
         <GlassSurface
           isInteractive
           style={{ padding: 10, borderRadius: 14 }}
           fallbackStyle={{ backgroundColor: colors.surface }}
           tintColor={colors.surface}
         >
-          <Menu size={26} color={colors.text} />
+          <Plus size={26} color={colors.text} />
         </GlassSurface>
       </Pressable>
 
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dotColor }} />
+        <Animated.View
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: dotColor,
+            opacity: pulseAnim,
+          }}
+        />
         {label ? (
           <Text style={{ color: colors.textDim, fontSize: 12, fontFamily: "IosevkaAile-Regular" }}>
             {label}

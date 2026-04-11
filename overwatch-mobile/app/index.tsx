@@ -1,10 +1,9 @@
 import React, { useEffect, useRef, useCallback, useState } from "react";
-import { View, KeyboardAvoidingView, Platform, Keyboard } from "react-native";
+import { View, Text, KeyboardAvoidingView, Platform, Keyboard, Pressable, Modal } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
 import { setAudioModeAsync } from "expo-audio";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import PagerView from "react-native-pager-view";
 import { useConnectionStore } from "../src/stores/connection-store";
 import { useThemeStore } from "../src/stores/theme-store";
 import { useOverwatchTurn } from "../src/hooks/use-overwatch-turn";
@@ -16,20 +15,19 @@ import { NotificationsBanner } from "../src/components/NotificationsBanner";
 import { TranscriptView } from "../src/components/TranscriptView";
 import { InputBar } from "../src/components/InputBar";
 import { PTTButton } from "../src/components/PTTButton";
-import { SessionsPanel } from "../src/components/SessionsPanel";
 import { SettingsPage } from "../src/components/SettingsPage";
 import { useRealtimeConnection } from "../src/hooks/use-realtime-connection";
 import "../global.css";
 
 export default function App() {
   const colors = useColors();
-  const pagerRef = useRef<PagerView>(null);
-  const { loadBackendURL, backendURL } = useConnectionStore();
+  const { loadBackendURL, connectionStatus } = useConnectionStore();
   const { sendText, sendVoice, cancel } = useOverwatchTurn();
   const { amplitude, startRecording, stopRecording } = useRecorder();
   useRealtimeConnection();
 
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     const showSub = Keyboard.addListener("keyboardWillShow", () => setKeyboardVisible(true));
@@ -47,18 +45,20 @@ export default function App() {
     setAudioModeAsync({
       allowsRecording: true,
       interruptionMode: "doNotMix",
-      shouldPlayInBackground: true,
+      shouldPlayInBackground: false,
       playsInSilentMode: true,
       shouldRouteThroughEarpiece: false,
     });
     loadBackendURL();
     useThemeStore.getState().loadMode();
-    useTurnStore.getState().loadSessions();
   }, []);
 
-  const goToChat = useCallback(() => pagerRef.current?.setPage(1), []);
-  const goToSessions = useCallback(() => pagerRef.current?.setPage(0), []);
-  const goToSettings = useCallback(() => pagerRef.current?.setPage(2), []);
+  const goToSettings = useCallback(() => setShowSettings(true), []);
+  const closeSettings = useCallback(() => setShowSettings(false), []);
+
+  const handleNewChat = useCallback(() => {
+    useTurnStore.getState().clearMessages();
+  }, []);
 
   const handleTextSubmit = useCallback((text: string) => { sendText(text); }, [sendText]);
 
@@ -102,32 +102,20 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
       <StatusBar style={useThemeStore.getState().isDark() ? "light" : "dark"} />
-      <PagerView
-        ref={pagerRef}
+      <KeyboardAvoidingView
         style={{ flex: 1 }}
-        initialPage={1}
-        scrollEnabled={false}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={0}
       >
-        {/* Page 0: Sessions */}
-        <View key="sessions" style={{ flex: 1, backgroundColor: colors.bg }}>
-          <View style={{ height: Platform.OS === "ios" ? 54 : 30 }} />
-          <SessionsPanel onClose={goToChat} />
-        </View>
+        <View style={{ height: Platform.OS === "ios" ? 54 : 30 }} />
 
-        {/* Page 1: Chat (main) */}
-        <View key="chat" style={{ flex: 1, backgroundColor: colors.bg }}>
-          <KeyboardAvoidingView
-            style={{ flex: 1 }}
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-            keyboardVerticalOffset={0}
-          >
-            <View style={{ height: Platform.OS === "ios" ? 54 : 30 }} />
+        <OverwatchStatusBar
+          onSettingsPress={goToSettings}
+          onNewChat={handleNewChat}
+        />
 
-            <OverwatchStatusBar
-              onSettingsPress={goToSettings}
-              onSessionsPress={goToSessions}
-            />
-
+        {connectionStatus === "connected" ? (
+          <>
             <NotificationsBanner />
 
             <TranscriptView />
@@ -153,15 +141,34 @@ export default function App() {
                 amplitude={amplitude}
               />
             </View>
-          </KeyboardAvoidingView>
-        </View>
+          </>
+        ) : (
+          <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 16, paddingHorizontal: 40 }}>
+            <Text style={{ color: colors.textDim, fontFamily: "IosevkaAile-Regular", fontSize: 15, textAlign: "center" }}>
+              {connectionStatus === "reconnecting" ? "Reconnecting to your Mac..." : connectionStatus === "connecting" ? "Connecting..." : "Not connected"}
+            </Text>
+            <Pressable
+              onPress={goToSettings}
+              style={{
+                backgroundColor: colors.accent,
+                paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12,
+              }}
+            >
+              <Text style={{ color: colors.bg, fontFamily: "IosevkaAile-Medium", fontSize: 14 }}>
+                {connectionStatus === "disconnected" ? "Connect" : "Settings"}
+              </Text>
+            </Pressable>
+          </View>
+        )}
+      </KeyboardAvoidingView>
 
-        {/* Page 2: Settings */}
-        <View key="settings" style={{ flex: 1, backgroundColor: colors.bg }}>
+      {/* Settings Modal */}
+      <Modal visible={showSettings} animationType="slide">
+        <View style={{ flex: 1, backgroundColor: colors.bg }}>
           <View style={{ height: Platform.OS === "ios" ? 54 : 30 }} />
-          <SettingsPage onClose={goToChat} />
+          <SettingsPage onClose={closeSettings} />
         </View>
-      </PagerView>
+      </Modal>
     </GestureHandlerRootView>
   );
 }

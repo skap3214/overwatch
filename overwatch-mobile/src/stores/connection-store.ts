@@ -19,7 +19,12 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
 
   setBackendURL: async (url: string) => {
     const trimmed = url.replace(/\/+$/, "");
-    set({ backendURL: trimmed, connectionStatus: "disconnected" });
+    // Relay URLs: preserve current connection status (WebSocket manages it)
+    if (trimmed.startsWith("relay:") || trimmed.includes("(relay:")) {
+      set({ backendURL: trimmed });
+    } else {
+      set({ backendURL: trimmed, connectionStatus: "disconnected" });
+    }
     await AsyncStorage.setItem(BACKEND_URL_KEY, trimmed);
     if (trimmed) {
       get().checkHealth();
@@ -57,13 +62,13 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
       });
       clearTimeout(timeout);
       if (!res.ok) {
-        set({ connectionStatus: "error" });
+        set({ connectionStatus: "disconnected" });
         return;
       }
       set({ connectionStatus: "connected" });
     } catch (err) {
       console.warn("Health check failed:", err);
-      set({ connectionStatus: "error" });
+      set({ connectionStatus: "disconnected" });
     }
   },
 }));

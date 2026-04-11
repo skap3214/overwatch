@@ -15,7 +15,7 @@ export function useRealtimeConnection() {
   useEffect(() => {
     realtimeClient.setHandlers({
       onStatus: (status) => {
-        setConnectionStatus(status === "connected" ? "connected" : status === "error" ? "error" : "disconnected");
+        setConnectionStatus(status);
       },
       onEnvelope: (envelope: WsEnvelope) => {
         switch (envelope.type) {

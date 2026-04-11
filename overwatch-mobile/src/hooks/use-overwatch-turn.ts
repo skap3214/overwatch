@@ -22,7 +22,10 @@ export function useOverwatchTurn() {
       store.addUserMessage(text);
       store.setTurnState("processing");
       store.setAbortController(null);
-      realtimeClient.startTextTurn(text);
+      if (!realtimeClient.startTextTurn(text)) {
+        store.handleError("Not connected — waiting for reconnection");
+        return;
+      }
     },
     [connectionStatus, store, player]
   );
@@ -55,7 +58,10 @@ export function useOverwatchTurn() {
             reader.onerror = reject;
             reader.readAsDataURL(blob);
           });
-          realtimeClient.sendVoiceAudio(base64, mimeType);
+          if (!realtimeClient.sendVoiceAudio(base64, mimeType)) {
+            store.handleError("Not connected — waiting for reconnection");
+            return;
+          }
           // The CLI bridge will send back voice.transcript, which the
           // useRealtimeConnection hook handles
         } catch (err) {

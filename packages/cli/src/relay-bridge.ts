@@ -5,6 +5,11 @@
  * - Incoming from relay: decrypt → forward plaintext JSON to backend
  * - Outgoing from backend: encrypt → forward encrypted frame to relay
  * - Special: voice.audio → decrypt → POST to local STT → encrypt voice.transcript → relay
+ *
+ * Control plane (plaintext text frames, not encrypted):
+ * - ping/pong: heartbeat with relay DO
+ * - peer.disconnected: relay notifies us when phone dies
+ * - bridge.status: we signal readiness (relay+backend both up, key derived) to phone
  */
 
 import WebSocket from "ws";
@@ -26,7 +31,13 @@ interface BridgeOptions {
   sttUrl: string;
   onPhoneConnected: () => void;
   onPhoneDisconnected: () => void;
+  onReconnecting?: (target: "relay" | "backend") => void;
+  onReconnected?: (target: "relay" | "backend") => void;
   onError: (err: Error) => void;
+}
+
+function backoff(attempt: number, maxMs: number): number {
+  return Math.min(maxMs, 1000 * Math.pow(2, attempt)) + Math.random() * 500;
 }
 
 export class RelayBridge {
@@ -35,6 +46,21 @@ export class RelayBridge {
   private keyPair: KeyPair;
   private sharedKey: Uint8Array | null = null;
   private options: BridgeOptions;
+  private isRunning = false;
+
+  // Reconnection state
+  private relayReconnectAttempt = 0;
+  private relayReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private backendReconnectAttempt = 0;
+  private backendReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Heartbeat state
+  private pingInterval: ReturnType<typeof setInterval> | null = null;
+  private pongTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Readiness tracking
+  private backendConnected = false;
+  private phoneConnected = false;
 
   constructor(options: BridgeOptions) {
     this.options = options;
@@ -46,60 +72,104 @@ export class RelayBridge {
   }
 
   start(): void {
+    this.isRunning = true;
     this.connectToRelay();
     this.connectToBackend();
   }
 
   stop(): void {
+    this.isRunning = false;
+    this.clearHeartbeat();
+    if (this.relayReconnectTimer) { clearTimeout(this.relayReconnectTimer); this.relayReconnectTimer = null; }
+    if (this.backendReconnectTimer) { clearTimeout(this.backendReconnectTimer); this.backendReconnectTimer = null; }
     this.relayWs?.close();
     this.backendWs?.close();
     this.relayWs = null;
     this.backendWs = null;
   }
 
+  // ── Relay connection ──────────────────────────────────────────────
+
   private connectToRelay(): void {
     const wsUrl = this.options.relayUrl
       .replace(/^https:\/\//, "wss://")
       .replace(/^http:\/\//, "ws://");
-    const url = `${wsUrl}/api/room/${this.options.roomCode}/ws/host?roomId=${this.options.roomId}`;
+    const url = `${wsUrl}/api/room/${this.options.roomCode}/ws/host?roomId=${this.options.roomId}&hostPublicKey=${encodeURIComponent(this.publicKeyBase64)}`;
 
-    this.relayWs = new WebSocket(url);
+    const ws = new WebSocket(url);
+    this.relayWs = ws;
 
-    this.relayWs.on("open", () => {
+    ws.on("open", () => {
       console.log(`[bridge] relay WebSocket OPEN`);
+      if (this.relayReconnectAttempt > 0) {
+        this.options.onReconnected?.("relay");
+      }
+      // Don't reset attempt counter yet — wait for first pong
+      this.startHeartbeat();
+      // Send bridge.status if backend is already connected
+      this.sendBridgeStatus();
     });
 
-    this.relayWs.on("message", (data: Buffer, isBinary: boolean) => {
-      console.log(`[bridge] relay message: binary=${isBinary} len=${data.length}`);
+    ws.on("message", (data: Buffer, isBinary: boolean) => {
       if (!isBinary) {
-        // Plaintext text frame — key exchange
         const text = data.toString("utf-8");
-        console.log(`[bridge] relay text: ${text.slice(0, 200)}`);
+        if (this.handleControlFrame(text)) return;
+        // Non-control text frame (client.hello etc)
         this.handleKeyExchange(text);
         return;
       }
-      // Encrypted binary frame
+      // Encrypted binary frame from phone
       this.handleEncryptedFromPhone(data);
     });
 
-    this.relayWs.on("close", (code: number, reason: Buffer) => {
+    ws.on("close", (code: number, reason: Buffer) => {
       console.log(`[bridge] relay WebSocket CLOSED: ${code} ${reason.toString()}`);
-      this.options.onPhoneDisconnected();
+      this.clearHeartbeat();
+      this.relayWs = null;
+
+      if (this.phoneConnected) {
+        this.phoneConnected = false;
+        this.options.onPhoneDisconnected();
+      }
+
+      if (this.isRunning) {
+        this.scheduleRelayReconnect();
+      }
     });
 
-    this.relayWs.on("error", (err: Error) => {
+    ws.on("error", (err: Error) => {
       console.error(`[bridge] relay WebSocket ERROR: ${err.message}`);
-      this.options.onError(err);
     });
   }
 
+  private scheduleRelayReconnect(): void {
+    if (this.relayReconnectTimer) return;
+    const delay = backoff(this.relayReconnectAttempt, 30_000);
+    this.relayReconnectAttempt++;
+    console.log(`[bridge] relay reconnect in ${Math.round(delay)}ms (attempt ${this.relayReconnectAttempt})`);
+    this.options.onReconnecting?.("relay");
+    this.relayReconnectTimer = setTimeout(() => {
+      this.relayReconnectTimer = null;
+      if (this.isRunning) this.connectToRelay();
+    }, delay);
+  }
+
+  // ── Backend connection ────────────────────────────────────────────
+
   private connectToBackend(): void {
     const url = `ws://localhost:${this.options.backendPort}/api/v1/ws`;
-    this.backendWs = new WebSocket(url);
+    const ws = new WebSocket(url);
+    this.backendWs = ws;
 
-    this.backendWs.on("open", () => {
-      // Send hello to backend as if we're a normal client
-      this.backendWs!.send(
+    ws.on("open", () => {
+      console.log(`[bridge] backend WebSocket OPEN`);
+      this.backendConnected = true;
+      if (this.backendReconnectAttempt > 0) {
+        this.options.onReconnected?.("backend");
+        this.backendReconnectAttempt = 0;
+      }
+      // Send hello to backend
+      ws.send(
         JSON.stringify({
           id: `cli_${Date.now()}`,
           createdAt: new Date().toISOString(),
@@ -107,12 +177,13 @@ export class RelayBridge {
           payload: { clientName: "overwatch-cli-bridge" },
         })
       );
+      // Notify phone of readiness
+      this.sendBridgeStatus();
     });
 
-    this.backendWs.on("message", (data: Buffer) => {
+    ws.on("message", (data: Buffer) => {
       // Backend sends plaintext JSON → encrypt and forward to relay
       if (!this.sharedKey || !this.relayWs) {
-        console.warn(`[bridge] dropping backend msg: sharedKey=${!!this.sharedKey} relayWs=${!!this.relayWs}`);
         return;
       }
       const text = data.toString("utf-8");
@@ -121,13 +192,112 @@ export class RelayBridge {
         console.log(`[bridge] backend→relay: ${env.type}`);
       } catch {}
       const encrypted = encrypt(text, this.sharedKey);
-      this.relayWs.send(encrypted);
+      try { this.relayWs.send(encrypted); } catch {}
     });
 
-    this.backendWs.on("error", (err: Error) => {
-      this.options.onError(new Error(`Backend WebSocket error: ${err.message}`));
+    ws.on("close", () => {
+      console.log(`[bridge] backend WebSocket CLOSED`);
+      this.backendConnected = false;
+      this.backendWs = null;
+      // Notify phone that backend is down
+      this.sendBridgeStatus();
+
+      if (this.isRunning) {
+        this.scheduleBackendReconnect();
+      }
+    });
+
+    ws.on("error", (err: Error) => {
+      console.error(`[bridge] backend WebSocket ERROR: ${err.message}`);
     });
   }
+
+  private scheduleBackendReconnect(): void {
+    if (this.backendReconnectTimer) return;
+    const delay = backoff(this.backendReconnectAttempt, 15_000);
+    this.backendReconnectAttempt++;
+    console.log(`[bridge] backend reconnect in ${Math.round(delay)}ms (attempt ${this.backendReconnectAttempt})`);
+    this.options.onReconnecting?.("backend");
+    this.backendReconnectTimer = setTimeout(() => {
+      this.backendReconnectTimer = null;
+      if (this.isRunning) this.connectToBackend();
+    }, delay);
+  }
+
+  // ── Heartbeat ─────────────────────────────────────────────────────
+
+  private startHeartbeat(): void {
+    this.clearHeartbeat();
+    this.pingInterval = setInterval(() => {
+      if (!this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return;
+      this.relayWs.send(JSON.stringify({ type: "ping" }));
+      // Start per-ping 10s timeout
+      if (this.pongTimeoutTimer) clearTimeout(this.pongTimeoutTimer);
+      this.pongTimeoutTimer = setTimeout(() => {
+        console.log(`[bridge] pong timeout — closing relay socket`);
+        this.relayWs?.close(4001, "pong_timeout");
+      }, 10_000);
+    }, 15_000);
+  }
+
+  private clearHeartbeat(): void {
+    if (this.pingInterval) { clearInterval(this.pingInterval); this.pingInterval = null; }
+    if (this.pongTimeoutTimer) { clearTimeout(this.pongTimeoutTimer); this.pongTimeoutTimer = null; }
+  }
+
+  // ── Control frame handling ────────────────────────────────────────
+
+  private handleControlFrame(text: string): boolean {
+    let parsed: { type: string; [key: string]: unknown };
+    try {
+      parsed = JSON.parse(text);
+      if (typeof parsed.type !== "string") return false;
+    } catch {
+      return false;
+    }
+
+    switch (parsed.type) {
+      case "pong":
+        // Pong from relay — heartbeat alive
+        if (this.pongTimeoutTimer) { clearTimeout(this.pongTimeoutTimer); this.pongTimeoutTimer = null; }
+        // Reset reconnect counter on first pong (proves round-trip)
+        if (this.relayReconnectAttempt > 0) {
+          this.relayReconnectAttempt = 0;
+        }
+        return true;
+
+      case "peer.disconnected": {
+        const role = parsed.role as string;
+        console.log(`[bridge] peer.disconnected: ${role}`);
+        if (role === "client") {
+          // Phone disconnected
+          this.phoneConnected = false;
+          this.sharedKey = null; // Phone will re-handshake on reconnect
+          this.options.onPhoneDisconnected();
+        }
+        return true;
+      }
+
+      default:
+        return false;
+    }
+  }
+
+  // ── Bridge status signaling ───────────────────────────────────────
+
+  private sendBridgeStatus(): void {
+    if (!this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return;
+    const ready = this.backendConnected && this.sharedKey !== null;
+    try {
+      this.relayWs.send(JSON.stringify({
+        type: "bridge.status",
+        ready,
+      }));
+      console.log(`[bridge] sent bridge.status ready=${ready}`);
+    } catch {}
+  }
+
+  // ── Key exchange ──────────────────────────────────────────────────
 
   private handleKeyExchange(message: string): void {
     try {
@@ -135,12 +305,17 @@ export class RelayBridge {
       if (envelope.type === "client.hello" && envelope.payload?.clientPublicKey) {
         const clientPublicKey = fromBase64(envelope.payload.clientPublicKey);
         this.sharedKey = deriveSharedKey(clientPublicKey, this.keyPair.secretKey);
+        this.phoneConnected = true;
         this.options.onPhoneConnected();
+        // Send bridge.status now that we have the shared key
+        this.sendBridgeStatus();
       }
     } catch {
       // Not a valid key exchange message
     }
   }
+
+  // ── Encrypted message handling ────────────────────────────────────
 
   private handleEncryptedFromPhone(data: Buffer): void {
     if (!this.sharedKey) return;
@@ -153,19 +328,18 @@ export class RelayBridge {
       return;
     }
 
-    // Parse the envelope to check for special types
     let envelope: { type: string; payload?: any };
     try {
       envelope = JSON.parse(plaintext);
     } catch {
-      // Forward as-is
       this.backendWs?.send(plaintext);
       return;
     }
 
+    console.log(`[bridge] phone→backend: ${envelope.type}`);
+
     // Special handling: voice.audio → local STT
     if (envelope.type === "voice.audio") {
-      console.log(`[bridge] voice.audio received, data length: ${envelope.payload?.data?.length ?? 0}`);
       this.handleVoiceAudio(envelope.payload);
       return;
     }
@@ -179,11 +353,9 @@ export class RelayBridge {
     mimeType: string;
   }): Promise<void> {
     try {
-      // Decode base64 audio
       const audioBytes = fromBase64(payload.data);
       console.log(`[bridge] STT: ${audioBytes.length} bytes, mime: ${payload.mimeType}`);
 
-      // POST to local STT endpoint
       const res = await fetch(this.options.sttUrl, {
         method: "POST",
         headers: { "Content-Type": payload.mimeType || "audio/wav" },
@@ -202,7 +374,6 @@ export class RelayBridge {
         return;
       }
 
-      // Send transcript back to phone
       this.sendEncryptedToPhone({
         type: "voice.transcript",
         payload: { text: json.transcript.trim() },
@@ -224,6 +395,6 @@ export class RelayBridge {
       ...envelope,
     });
     const encrypted = encrypt(json, this.sharedKey);
-    this.relayWs.send(encrypted);
+    try { this.relayWs.send(encrypted); } catch {}
   }
 }

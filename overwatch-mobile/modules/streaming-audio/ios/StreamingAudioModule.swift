@@ -2,7 +2,6 @@ import ExpoModulesCore
 
 public class StreamingAudioModule: Module {
     private var engine: StreamingAudioEngine?
-    private var mediaController: StreamingMediaController?
 
     public func definition() -> ModuleDefinition {
         Name("StreamingAudio")
@@ -14,7 +13,6 @@ public class StreamingAudioModule: Module {
             let channels = config["channels"] as? Int ?? 1
 
             self.engine?.stop()
-            self.mediaController?.deregister()
 
             let newEngine = StreamingAudioEngine(sampleRate: sampleRate, channels: channels)
             newEngine.onChunkFinished = { [weak self] in
@@ -32,35 +30,11 @@ public class StreamingAudioModule: Module {
             }
 
             self.engine = newEngine
-
-            let controller = StreamingMediaController()
-            controller.onPlayCommand = { [weak self] in
-                self?.engine?.play()
-                self?.mediaController?.updatePlaybackState(isPlaying: true)
-                self?.sendEvent("onPlaybackStateChanged", ["isPlaying": true])
-                self?.sendEvent("onRemoteCommand", ["command": "play"])
-            }
-            controller.onPauseCommand = { [weak self] in
-                self?.engine?.pause()
-                self?.mediaController?.updatePlaybackState(isPlaying: false)
-                self?.sendEvent("onPlaybackStateChanged", ["isPlaying": false])
-                self?.sendEvent("onRemoteCommand", ["command": "pause"])
-            }
-            controller.onNextTrackCommand = { [weak self] in
-                self?.sendEvent("onRemoteCommand", ["command": "nextTrack"])
-            }
-            controller.onPreviousTrackCommand = { [weak self] in
-                self?.sendEvent("onRemoteCommand", ["command": "previousTrack"])
-            }
-            controller.register()
-            self.mediaController = controller
         }
 
         Function("endSession") {
             self.engine?.stop()
             self.engine = nil
-            self.mediaController?.deregister()
-            self.mediaController = nil
         }
 
         Function("feedPCM") { (pcmData: Data) in
@@ -93,13 +67,11 @@ public class StreamingAudioModule: Module {
 
         Function("play") {
             self.engine?.play()
-            self.mediaController?.updatePlaybackState(isPlaying: true)
             self.sendEvent("onPlaybackStateChanged", ["isPlaying": true])
         }
 
         Function("pause") {
             self.engine?.pause()
-            self.mediaController?.updatePlaybackState(isPlaying: false)
             self.sendEvent("onPlaybackStateChanged", ["isPlaying": false])
         }
 
@@ -111,16 +83,8 @@ public class StreamingAudioModule: Module {
             self.engine?.setRate(Float(rate))
         }
 
-        Function("updateNowPlaying") { (meta: [String: Any]) in
-            guard let controller = self.mediaController else { return }
-            controller.updateNowPlaying(
-                title: meta["title"] as? String ?? "Read Aloud",
-                artist: meta["artist"] as? String ?? "YouLearn",
-                artworkUrl: meta["artworkUrl"] as? String,
-                durationSeconds: meta["durationSeconds"] as? Double,
-                elapsedSeconds: meta["elapsedSeconds"] as? Double,
-                rate: meta["rate"] as? Double
-            )
+        Function("updateNowPlaying") { (_: [String: Any]) in
+            // No-op — lock screen controls disabled for Overwatch
         }
     }
 }
