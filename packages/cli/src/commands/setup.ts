@@ -321,7 +321,7 @@ function configureTerminalByName(name: string, configPath: string, scriptPath: s
 
 function isTmuxInstalled(): boolean {
   try {
-    execSync("which tmux", { stdio: "pipe" });
+    execSync("which tmux", { stdio: "pipe", env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` } });
     return true;
   } catch {
     return false;
@@ -341,7 +341,10 @@ async function setupTerminal(): Promise<void> {
   if (!isTmuxInstalled()) {
     console.log(chalk.yellow("  !") + " tmux is not installed. Installing...");
     try {
-      execSync("brew install tmux", { stdio: "inherit" });
+      execSync("brew install tmux", {
+        stdio: "inherit",
+        env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` },
+      });
       console.log(chalk.green("  ✓") + " tmux installed\n");
     } catch {
       console.log(chalk.red("  ✗") + " Failed to install tmux. Install manually: brew install tmux\n");
