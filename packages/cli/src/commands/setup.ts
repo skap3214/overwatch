@@ -355,7 +355,7 @@ function isTmuxInstalled(): boolean {
   }
 }
 
-async function setupTerminal(): Promise<void> {
+async function setupTerminal(): Promise<boolean> {
   console.log(chalk.bold("\nTerminal Setup"));
   console.log(chalk.dim("──────────────"));
 
@@ -375,7 +375,7 @@ async function setupTerminal(): Promise<void> {
       console.log(chalk.green("  ✓") + " tmux installed\n");
     } catch {
       console.log(chalk.red("  ✗") + " Failed to install tmux. Install manually: brew install tmux\n");
-      return;
+      return false;
     }
   }
 
@@ -395,7 +395,7 @@ async function setupTerminal(): Promise<void> {
         " No supported terminals detected (Ghostty, Kitty, iTerm2, Alacritty)"
     );
     console.log(chalk.dim("  You can configure tmux manually later.\n"));
-    return;
+    return false;
   }
 
   // Check which terminals already have tmux configured
@@ -421,7 +421,7 @@ async function setupTerminal(): Promise<void> {
 
   if (needsConfig.length === 0) {
     console.log(chalk.green("  ✓") + " All detected terminals already have tmux configured.\n");
-    return;
+    return false;
   }
 
   // Show already-configured terminals
@@ -444,7 +444,7 @@ async function setupTerminal(): Promise<void> {
 
   if (!response.terminals || response.terminals.length === 0) {
     console.log(chalk.dim("  No terminals selected — skipping.\n"));
-    return;
+    return false;
   }
 
   const scriptPath = installTmuxScript();
@@ -464,10 +464,7 @@ async function setupTerminal(): Promise<void> {
     }
   }
 
-  console.log("");
-  console.log(chalk.yellow.bold("  ⚠ You MUST restart your terminal(s) for tmux auto-start to take effect."));
-  console.log(chalk.yellow("  Close and reopen your terminal — new tabs will automatically open a tmux session."));
-  console.log("");
+  return true;
 }
 
 // --- Main setup command ---
@@ -544,6 +541,7 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
   installTmuxScript();
 
   // Terminal setup
+  let terminalsConfigured = false;
   if (options.configureTerminal) {
     // Non-interactive terminal config
     const scriptPath = installTmuxScript();
@@ -560,8 +558,7 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
       }
       if (configured) {
         console.log(chalk.green("✓") + ` Configured ${terminal.name}`);
-        console.log(chalk.yellow.bold("\n⚠ You MUST restart your terminal for tmux auto-start to take effect."));
-        console.log(chalk.yellow("  Close and reopen your terminal — new tabs will automatically open a tmux session."));
+        terminalsConfigured = true;
       } else {
         console.log(chalk.dim(`  ${terminal.name} already configured`));
       }
@@ -569,10 +566,19 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
       console.log(chalk.yellow("!") + ` Terminal "${options.configureTerminal}" not found`);
     }
   } else if (!ni) {
-    await setupTerminal();
+    terminalsConfigured = await setupTerminal();
   }
 
   rl.close();
 
-  console.log(`Run ${chalk.bold("overwatch start")} to begin.`);
+  // Show restart warning at the very end so it's not buried by brew output
+  if (terminalsConfigured) {
+    console.log("");
+    console.log(chalk.yellow.bold("⚠ IMPORTANT: You MUST restart your terminal for changes to take effect."));
+    console.log(chalk.yellow("  Close and reopen your terminal — new tabs will automatically open a tmux session."));
+    console.log("");
+    console.log(`Then run ${chalk.bold("overwatch start")} to begin.`);
+  } else {
+    console.log(`Run ${chalk.bold("overwatch start")} to begin.`);
+  }
 }
