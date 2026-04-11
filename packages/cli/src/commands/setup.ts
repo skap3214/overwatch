@@ -187,11 +187,26 @@ function configureAlacritty(configPath: string, scriptPath: string): boolean {
 }
 
 function configureITerm2(scriptPath: string): boolean {
-  // iTerm2 uses a plist — use defaults write
+  // iTerm2 uses a plist — modify the default profile with PlistBuddy
+  const plistPath = join(homedir(), "Library", "Preferences", "com.googlecode.iterm2.plist");
+  if (!existsSync(plistPath)) return false;
+
   try {
     const { execSync } = require("node:child_process");
+    // Check if already configured
+    const current = execSync(
+      `/usr/libexec/PlistBuddy -c "Print :New\\ Bookmarks:0:Command" "${plistPath}"`,
+      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
+    ).trim();
+    if (current.includes("overwatch/tmux-session.sh")) return false;
+
+    // Set custom command on the default profile (index 0)
     execSync(
-      `defaults write com.googlecode.iterm2 "New Bookmarks" -array-add '<dict><key>Command</key><string>${scriptPath}</string><key>Custom Command</key><string>Yes</string></dict>'`,
+      `/usr/libexec/PlistBuddy -c "Set :New\\ Bookmarks:0:Custom\\ Command Yes" "${plistPath}"`,
+      { stdio: "ignore" }
+    );
+    execSync(
+      `/usr/libexec/PlistBuddy -c "Set :New\\ Bookmarks:0:Command ${scriptPath}" "${plistPath}"`,
       { stdio: "ignore" }
     );
     return true;
