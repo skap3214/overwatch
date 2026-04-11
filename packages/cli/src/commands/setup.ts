@@ -131,7 +131,14 @@ const TMUX_SCRIPT = `#!/bin/bash
 # overwatch: auto-start tmux session on new terminal tab
 # Don't nest — if already inside tmux, just start a shell
 [ -n "\$TMUX" ] && exec "\${SHELL:-/bin/zsh}"
-export PATH="/opt/homebrew/bin:/usr/local/bin:\$PATH"
+# Ensure brew binaries are on PATH
+if command -v brew &>/dev/null; then
+  eval "\$(brew shellenv)"
+elif [ -d "/opt/homebrew" ]; then
+  eval "\$(/opt/homebrew/bin/brew shellenv)"
+elif [ -d "/usr/local/Homebrew" ]; then
+  eval "\$(/usr/local/bin/brew shellenv)"
+fi
 TMUX_BIN="\${TMUX_BIN:-tmux}"
 n=0
 while \$TMUX_BIN has-session -t "ow-\$n" 2>/dev/null; do
@@ -319,9 +326,26 @@ function configureTerminalByName(name: string, configPath: string, scriptPath: s
   }
 }
 
+// Get brew prefix reliably (works on Apple Silicon, Intel, and Linux)
+function brewPrefix(): string {
+  try {
+    return execSync("brew --prefix", { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+  } catch {
+    // Common defaults
+    if (existsSync("/opt/homebrew")) return "/opt/homebrew";
+    if (existsSync("/usr/local/Homebrew")) return "/usr/local";
+    return "/usr/local";
+  }
+}
+
+function shellPath(): string {
+  const prefix = brewPrefix();
+  return `${prefix}/bin:${process.env.PATH}`;
+}
+
 function isTmuxInstalled(): boolean {
   try {
-    execSync("which tmux", { stdio: "pipe", env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` } });
+    execSync("which tmux", { stdio: "pipe", env: { ...process.env, PATH: shellPath() } });
     return true;
   } catch {
     return false;
@@ -343,7 +367,7 @@ async function setupTerminal(): Promise<void> {
     try {
       execSync("brew install tmux", {
         stdio: "inherit",
-        env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` },
+        env: { ...process.env, PATH: shellPath() },
       });
       console.log(chalk.green("  ✓") + " tmux installed\n");
     } catch {
