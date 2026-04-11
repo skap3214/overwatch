@@ -21,19 +21,27 @@ export function QRScanner({ onClose }: Props) {
 
     try {
       const parsed = JSON.parse(data) as {
+        // Short keys (new format)
+        r?: string;
+        k?: string;
+        // Legacy keys
         relay?: string;
         room?: string;
         hostPublicKey?: string;
       };
 
-      if (!parsed.relay || !parsed.room || !parsed.hostPublicKey) {
+      const room = parsed.r || parsed.room;
+      const hostPublicKey = parsed.k || parsed.hostPublicKey;
+      const relayUrl = parsed.relay || "https://overwatch-relay.soami.workers.dev";
+
+      if (!room || !hostPublicKey) {
         throw new Error("Invalid QR code");
       }
 
       const config: RelayConfig = {
-        relayUrl: parsed.relay,
-        room: parsed.room,
-        hostPublicKey: parsed.hostPublicKey,
+        relayUrl,
+        room,
+        hostPublicKey,
       };
 
       // Disconnect any existing connection first, then set relay URL
@@ -41,7 +49,7 @@ export function QRScanner({ onClose }: Props) {
       realtimeClient.disconnect();
 
       useConnectionStore.setState({
-        backendURL: `relay:${parsed.room}`,
+        backendURL: `relay:${room}`,
         connectionStatus: "disconnected",
       });
 

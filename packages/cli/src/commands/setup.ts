@@ -76,6 +76,13 @@ function detectTerminals(): TerminalInfo[] {
         join(home, ".config", "alacritty", "alacritty.toml")
       ),
     },
+    {
+      name: "cmux",
+      configPath: join(home, "Library", "Application Support", "cmux"),
+      detected:
+        existsSync("/Applications/cmux.app") ||
+        existsSync(join(home, "Library", "Application Support", "cmux")),
+    },
   ];
   return terminals;
 }
@@ -186,8 +193,12 @@ function configureITerm2(scriptPath: string): boolean {
   }
 }
 
+function userHasCmux(): boolean {
+  return existsSync("/Applications/cmux.app") ||
+    existsSync(join(homedir(), "Library", "Application Support", "cmux"));
+}
+
 function userAlreadyHasTmux(): boolean {
-  // Check if terminal config already launches tmux
   const home = homedir();
   const configs = [
     join(home, ".config", "ghostty", "config"),
@@ -211,6 +222,11 @@ async function setupTerminal(
   console.log(chalk.bold("\nTerminal Setup"));
   console.log(chalk.dim("──────────────"));
 
+  if (userHasCmux()) {
+    console.log(chalk.green("  ✓") + " cmux detected — built-in multiplexing, no tmux setup needed.");
+    console.log(chalk.dim("  Overwatch will use tmux sessions alongside cmux.\n"));
+  }
+
   if (userAlreadyHasTmux()) {
     console.log(chalk.green("  ✓") + " Detected existing tmux setup in your terminal config.");
     console.log(chalk.dim("  Skipping — your current setup will work with Overwatch.\n"));
@@ -232,7 +248,7 @@ async function setupTerminal(
   if (detected.length === 0) {
     console.log(
       chalk.yellow("!") +
-        " No supported terminals detected (Ghostty, Kitty, iTerm2, Alacritty)"
+        " No supported terminals detected (Ghostty, Kitty, iTerm2, Alacritty, cmux)"
     );
     console.log(chalk.dim("  You can configure tmux manually later.\n"));
     return;
@@ -249,6 +265,15 @@ async function setupTerminal(
   );
 
   for (const terminal of detected) {
+    // cmux has built-in multiplexing — no tmux setup needed
+    if (terminal.name === "cmux") {
+      console.log(
+        chalk.green("  ✓") +
+          ` ${terminal.name} has built-in multiplexing — no tmux setup needed.`
+      );
+      continue;
+    }
+
     const answer = await ask(
       rl,
       `  Configure ${terminal.name}? (Y/n): `

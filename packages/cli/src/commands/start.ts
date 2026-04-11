@@ -135,10 +135,10 @@ export async function startCommand(): Promise<void> {
   bridge.start();
 
   // 4. Show QR code
+  // Short keys + omit relay URL (phone uses default) to shrink QR code
   const qrData = JSON.stringify({
-    relay: relayUrl,
-    room: room.room,
-    hostPublicKey: bridge.publicKeyBase64,
+    r: room.room,
+    k: bridge.publicKeyBase64,
   });
 
   console.log("Scan this QR code with the Overwatch app:");
