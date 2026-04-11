@@ -10,6 +10,7 @@ import {
 import { join } from "node:path";
 import { homedir } from "node:os";
 import chalk from "chalk";
+import prompts from "prompts";
 import { loadConfig, saveConfig, getConfigDir } from "../config.js";
 
 function ask(
@@ -17,19 +18,6 @@ function ask(
   question: string
 ): Promise<string> {
   return new Promise((resolve) => rl.question(question, resolve));
-}
-
-async function choose(
-  rl: ReturnType<typeof createInterface>,
-  question: string,
-  options: string[]
-): Promise<number> {
-  console.log(question);
-  options.forEach((opt, i) => console.log(`  ${i + 1}) ${opt}`));
-  const answer = await ask(rl, `  Choice (1-${options.length}): `);
-  const n = parseInt(answer.trim(), 10);
-  if (n >= 1 && n <= options.length) return n - 1;
-  return -1;
 }
 
 // --- Terminal detection and configuration ---
@@ -242,9 +230,17 @@ function userAlreadyHasTmux(): boolean {
   return false;
 }
 
-async function setupTerminal(
-  rl: ReturnType<typeof createInterface>
-): Promise<void> {
+function configureTerminalByName(name: string, configPath: string, scriptPath: string): boolean {
+  switch (name) {
+    case "Ghostty": return configureGhostty(configPath, scriptPath);
+    case "Kitty": return configureKitty(configPath, scriptPath);
+    case "Alacritty": return configureAlacritty(configPath, scriptPath);
+    case "iTerm2": return configureITerm2(scriptPath);
+    default: return false;
+  }
+}
+
+async function setupTerminal(): Promise<void> {
   console.log(chalk.bold("\nTerminal Setup"));
   console.log(chalk.dim("──────────────"));
 
@@ -260,82 +256,55 @@ async function setupTerminal(
   }
 
   console.log(
-    chalk.dim(
-      "Configure your terminal to auto-start tmux on new tabs."
-    )
+    chalk.dim("  Configure your terminal to auto-start tmux on new tabs.")
   );
   console.log(
-    chalk.dim("This lets Overwatch discover and control your sessions.\n")
+    chalk.dim("  This lets Overwatch discover and control your sessions.\n")
   );
 
   const terminals = detectTerminals();
-  const detected = terminals.filter((t) => t.detected);
+  const configurable = terminals.filter((t) => t.detected && t.name !== "cmux");
 
-  if (detected.length === 0) {
+  if (configurable.length === 0) {
     console.log(
-      chalk.yellow("!") +
-        " No supported terminals detected (Ghostty, Kitty, iTerm2, Alacritty, cmux)"
+      chalk.yellow("  !") +
+        " No supported terminals detected (Ghostty, Kitty, iTerm2, Alacritty)"
     );
     console.log(chalk.dim("  You can configure tmux manually later.\n"));
     return;
   }
 
-  console.log("  Detected terminals:");
-  detected.forEach((t) => console.log(`  ${chalk.green("✓")} ${t.name}`));
-  console.log("");
+  const response = await prompts({
+    type: "multiselect",
+    name: "terminals",
+    message: "Select terminals to configure",
+    choices: configurable.map((t) => ({
+      title: t.name,
+      value: t.name,
+      selected: true,
+    })),
+    hint: "Space to toggle, Enter to confirm",
+  });
+
+  if (!response.terminals || response.terminals.length === 0) {
+    console.log(chalk.dim("  No terminals selected — skipping.\n"));
+    return;
+  }
 
   const scriptPath = installTmuxScript();
-  console.log(
-    chalk.green("  ✓") +
-      ` Installed tmux script at ${scriptPath}\n`
-  );
 
-  for (const terminal of detected) {
-    // cmux has built-in multiplexing — no tmux setup needed
-    if (terminal.name === "cmux") {
-      console.log(
-        chalk.green("  ✓") +
-          ` ${terminal.name} has built-in multiplexing — no tmux setup needed.`
-      );
-      continue;
-    }
+  for (const name of response.terminals as string[]) {
+    const terminal = configurable.find((t) => t.name === name);
+    if (!terminal) continue;
 
-    const answer = await ask(
-      rl,
-      `  Configure ${terminal.name}? (Y/n): `
-    );
-    if (answer.trim().toLowerCase() === "n") continue;
-
-    let configured = false;
-    switch (terminal.name) {
-      case "Ghostty":
-        configured = configureGhostty(terminal.configPath, scriptPath);
-        break;
-      case "Kitty":
-        configured = configureKitty(terminal.configPath, scriptPath);
-        break;
-      case "Alacritty":
-        configured = configureAlacritty(terminal.configPath, scriptPath);
-        break;
-      case "iTerm2":
-        configured = configureITerm2(scriptPath);
-        break;
-    }
-
+    const configured = configureTerminalByName(terminal.name, terminal.configPath, scriptPath);
     if (configured) {
-      console.log(
-        chalk.green("  ✓") +
-          ` Updated ${terminal.name} config`
-      );
-      console.log(
-        chalk.dim(
-          `    Backup saved at ${terminal.configPath}.overwatch-backup`
-        )
-      );
+      console.log(chalk.green("  ✓") + ` Configured ${terminal.name}`);
+      if (terminal.name !== "iTerm2") {
+        console.log(chalk.dim(`    Backup at ${terminal.configPath}.overwatch-backup`));
+      }
     } else {
-      console.log(
-        chalk.dim(`  ${terminal.name} already configured — no changes needed.`)
-      );
+      console.log(chalk.dim(`  ${terminal.name} already configured`));
     }
   }
   console.log("");
@@ -478,7 +447,7 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
       console.log(chalk.yellow("!") + ` Terminal "${options.configureTerminal}" not found`);
     }
   } else if (!ni) {
-    await setupTerminal(rl);
+    await setupTerminal();
   }
 
   rl.close();
