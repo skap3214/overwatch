@@ -92,6 +92,10 @@ function detectTerminals(): TerminalInfo[] {
 
 const TMUX_SCRIPT = `#!/bin/bash
 # overwatch: auto-start tmux session on new terminal tab
+# Source shell profile to get PATH (needed for iTerm2 and others that launch with minimal env)
+[ -f "\$HOME/.zshrc" ] && source "\$HOME/.zshrc" 2>/dev/null
+[ -f "\$HOME/.bashrc" ] && source "\$HOME/.bashrc" 2>/dev/null
+export PATH="/opt/homebrew/bin:/usr/local/bin:\$PATH"
 TMUX_BIN="\${TMUX_BIN:-tmux}"
 n=0
 while \$TMUX_BIN has-session -t "\$n" 2>/dev/null; do
