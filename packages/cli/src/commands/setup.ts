@@ -302,6 +302,15 @@ function configureTerminalByName(name: string, configPath: string, scriptPath: s
   }
 }
 
+function isTmuxInstalled(): boolean {
+  try {
+    execSync("which tmux", { stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function setupTerminal(): Promise<void> {
   console.log(chalk.bold("\nTerminal Setup"));
   console.log(chalk.dim("──────────────"));
@@ -309,6 +318,14 @@ async function setupTerminal(): Promise<void> {
   if (userHasCmux()) {
     console.log(chalk.green("  ✓") + " cmux detected — built-in multiplexing, no tmux setup needed.");
     console.log(chalk.dim("  Overwatch will use tmux sessions alongside cmux.\n"));
+  }
+
+  // Check if tmux is installed
+  if (!isTmuxInstalled()) {
+    console.log(chalk.yellow("  !") + " tmux is not installed.");
+    console.log(chalk.dim("  Install it with: brew install tmux"));
+    console.log(chalk.dim("  Then re-run overwatch setup.\n"));
+    return;
   }
 
   console.log(
@@ -395,7 +412,9 @@ async function setupTerminal(): Promise<void> {
       console.log(chalk.dim(`  ${terminal.name} already configured`));
     }
   }
-  console.log("");
+
+  console.log(chalk.bold("\n  Restart your terminal(s) for tmux auto-start to take effect."));
+  console.log(chalk.dim("  New tabs will automatically open a tmux session.\n"));
 }
 
 // --- Main setup command ---
