@@ -529,15 +529,6 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
     if (deepgram.trim()) config.deepgramApiKey = deepgram.trim();
   }
 
-  // Relay URL (non-interactive uses default)
-  if (!ni) {
-    const relay = await ask(
-      rl,
-      `Relay URL${config.relayUrl ? chalk.dim(` (${config.relayUrl})`) : ""}: `
-    );
-    if (relay.trim()) config.relayUrl = relay.trim();
-  }
-
   saveConfig(config);
   console.log("");
   console.log(

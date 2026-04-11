@@ -136,16 +136,16 @@ Toward:
 
 ```json
 {
-  "sttProvider": "local",
-  "ttsProvider": "none",
-  "localSttEngine": "whisper.cpp",
-  "localTtsEngine": "piper",
-  "sttBaseUrl": "http://127.0.0.1:8080",
-  "ttsBaseUrl": "http://127.0.0.1:5000",
+  "sttProvider": "deepgram",
+  "ttsProvider": "deepgram",
   "deepgramApiKey": "...",
   "deepgramTtsModel": "aura-2-aries-en",
   "relayUrl": "https://overwatch-relay.soami.workers.dev",
-  "backendPort": 8787
+  "backendPort": 8787,
+  "localSttEngine": "whisper.cpp",
+  "localTtsEngine": "piper",
+  "sttBaseUrl": "http://127.0.0.1:8080",
+  "ttsBaseUrl": "http://127.0.0.1:5000"
 }
 ```
 
@@ -166,18 +166,19 @@ Keep old configs working:
 
 - if `deepgramApiKey` exists and no `sttProvider` is set, default `sttProvider = "deepgram"`
 - if `deepgramApiKey` exists and no `ttsProvider` is set, default `ttsProvider = "deepgram"`
-- otherwise default to `sttProvider = "local"` and `ttsProvider = "none"`
+- otherwise default to `sttProvider = "deepgram"` and `ttsProvider = "deepgram"` for the main setup path
+- `ttsProvider = "none"` remains a first-class explicit choice for users who want transcript-only operation
 
 ### CLI setup UX changes
 
 Replace the current key prompts with provider selection:
 
 1. Ask for STT provider:
-   - `Local (recommended)`
-   - `Deepgram`
+   - `Deepgram (recommended)`
+   - `Local`
 
 2. If local STT is chosen, ask for engine:
-   - `whisper.cpp (recommended)`
+   - `whisper.cpp (recommended local option)`
    - `speaches`
    - `Custom OpenAI-compatible endpoint`
 
@@ -194,10 +195,11 @@ Replace the current key prompts with provider selection:
 
 ### Acceptance criteria
 
-- a fresh config can keep the current one-key Deepgram setup or opt into local providers later
+- a fresh config defaults to the current one-key Deepgram STT + TTS setup
 - existing configs continue to work unchanged
 - `overwatch status` reports providers and engines, not just keys
 - `README.md` no longer says a second TTS provider account is required
+- users can still explicitly choose `ttsProvider = none` or local provider variants
 
 ---
 
@@ -263,7 +265,6 @@ export function createTtsAdapter(config: AppConfig): TtsAdapter {
   }
 
   return new PiperProcessTtsAdapter({
-    voice: config.LOCAL_TTS_VOICE,
     engine: config.LOCAL_TTS_ENGINE,
     baseUrl: config.LOCAL_TTS_BASE_URL,
   });
@@ -495,7 +496,7 @@ New README stance:
 ### Acceptance criteria
 
 - first-run setup no longer blocks on provider credentials
-- docs accurately describe local-first defaults
+- docs accurately describe the one-key Deepgram default path, with optional local/provider alternatives
 - status makes it obvious what is configured and what is missing
 
 ---
@@ -542,14 +543,16 @@ This plan only changes the push-to-talk + relay/backend speech-provider path des
 
 Implement in this order:
 
-1. Provider-centric config schema
+1. Provider-centric config schema around the current Deepgram default
 2. Backend factories
-3. Generic local HTTP STT adapter
-4. Piper process TTS adapter
-5. Setup/status/docs refresh
-6. Optional accelerated engines later
+3. Null TTS adapter (`ttsProvider = none`)
+4. Generic local HTTP STT adapter
+5. Mobile playback metadata changes (`mimeType` + dynamic sample rate plumbing)
+6. Piper process TTS adapter
+7. Setup/status/docs refresh
+8. Optional accelerated engines later
 
-This order gives value early while keeping each step reversible.
+Important: steps 5 and 6 are one shippable slice for local Piper. This order gives value early while keeping each step reversible.
 
 ---
 
