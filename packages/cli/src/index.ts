@@ -16,6 +16,10 @@ program
 program
   .command("setup")
   .description("Configure API keys and terminal settings")
+  .option("--deepgram-key <key>", "Deepgram API key")
+  .option("--cartesia-key <key>", "Cartesia API key")
+  .option("--configure-terminal <name>", "Auto-configure terminal (ghostty, kitty, alacritty, iterm2)")
+  .option("--non-interactive", "Skip all prompts, use provided flags only")
   .action(setupCommand);
 
 program

@@ -324,9 +324,17 @@ async function setupTerminal(
 
 // --- Main setup command ---
 
-export async function setupCommand(): Promise<void> {
+interface SetupOptions {
+  deepgramKey?: string;
+  cartesiaKey?: string;
+  configureTerminal?: string;
+  nonInteractive?: boolean;
+}
+
+export async function setupCommand(options: SetupOptions = {}): Promise<void> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const config = loadConfig();
+  const ni = options.nonInteractive ?? false;
 
   console.log("");
   console.log(chalk.bold("Overwatch Setup"));
@@ -334,23 +342,32 @@ export async function setupCommand(): Promise<void> {
   console.log("");
 
   // Check pi-coding-agent setup
-  const piDir = join(homedir(), ".pi", "agent");
-  const authPath = join(piDir, "auth.json");
+  const authPath = join(homedir(), ".pi", "agent", "auth.json");
+  let agentConfigured = false;
   if (existsSync(authPath)) {
-    console.log(
-      chalk.green("✓") +
-        " AI agent configured"
-    );
-  } else {
-    console.log(
-      chalk.yellow("!") +
-        " AI agent not configured"
-    );
-    const runAgent = await ask(
-      rl,
-      `  Launch pi-coding-agent to set up? (Y/n): `
-    );
-    if (runAgent.trim().toLowerCase() !== "n") {
+    try {
+      const authData = JSON.parse(readFileSync(authPath, "utf-8"));
+      // Check if any provider has credentials
+      agentConfigured = Object.keys(authData).length > 0 &&
+        Object.values(authData).some((v: any) => v && typeof v === "object" && Object.keys(v).length > 0);
+    } catch {}
+  }
+
+  if (agentConfigured) {
+    console.log(chalk.green("✓") + " AI agent configured");
+    if (!ni) {
+      const reconfigure = await ask(rl, `  Reconfigure? (y/N): `);
+      if (reconfigure.trim().toLowerCase() === "y") {
+        agentConfigured = false;
+      }
+    }
+  }
+
+  if (!agentConfigured) {
+    if (ni) {
+      console.log(chalk.yellow("!") + " AI agent not configured — run `overwatch setup` interactively or `pi` to set up.");
+    } else {
+      console.log(chalk.yellow("!") + " AI agent needs setup");
       console.log(
         chalk.dim("\n  Launching pi-coding-agent — follow the prompts to configure your provider.")
       );
@@ -373,25 +390,37 @@ export async function setupCommand(): Promise<void> {
   console.log("");
 
   // Deepgram
-  const deepgram = await ask(
-    rl,
-    `Deepgram API key${config.deepgramApiKey ? chalk.dim(" (enter to keep current)") : ""}: `
-  );
-  if (deepgram.trim()) config.deepgramApiKey = deepgram.trim();
+  if (options.deepgramKey) {
+    config.deepgramApiKey = options.deepgramKey;
+    console.log(chalk.green("✓") + " Deepgram API key set");
+  } else if (!ni) {
+    const deepgram = await ask(
+      rl,
+      `Deepgram API key${config.deepgramApiKey ? chalk.dim(" (enter to keep current)") : ""}: `
+    );
+    if (deepgram.trim()) config.deepgramApiKey = deepgram.trim();
+  }
 
   // Cartesia
-  const cartesia = await ask(
-    rl,
-    `Cartesia API key${config.cartesiaApiKey ? chalk.dim(" (enter to keep current)") : ""}: `
-  );
-  if (cartesia.trim()) config.cartesiaApiKey = cartesia.trim();
+  if (options.cartesiaKey) {
+    config.cartesiaApiKey = options.cartesiaKey;
+    console.log(chalk.green("✓") + " Cartesia API key set");
+  } else if (!ni) {
+    const cartesia = await ask(
+      rl,
+      `Cartesia API key${config.cartesiaApiKey ? chalk.dim(" (enter to keep current)") : ""}: `
+    );
+    if (cartesia.trim()) config.cartesiaApiKey = cartesia.trim();
+  }
 
-  // Relay URL
-  const relay = await ask(
-    rl,
-    `Relay URL${config.relayUrl ? chalk.dim(` (${config.relayUrl})`) : ""}: `
-  );
-  if (relay.trim()) config.relayUrl = relay.trim();
+  // Relay URL (non-interactive uses default)
+  if (!ni) {
+    const relay = await ask(
+      rl,
+      `Relay URL${config.relayUrl ? chalk.dim(` (${config.relayUrl})`) : ""}: `
+    );
+    if (relay.trim()) config.relayUrl = relay.trim();
+  }
 
   saveConfig(config);
   console.log("");
@@ -400,7 +429,30 @@ export async function setupCommand(): Promise<void> {
   );
 
   // Terminal setup
-  await setupTerminal(rl);
+  if (options.configureTerminal) {
+    // Non-interactive terminal config
+    const scriptPath = installTmuxScript();
+    const name = options.configureTerminal.toLowerCase();
+    const terminals = detectTerminals();
+    const terminal = terminals.find((t) => t.name.toLowerCase() === name);
+    if (terminal) {
+      let configured = false;
+      switch (terminal.name) {
+        case "Ghostty": configured = configureGhostty(terminal.configPath, scriptPath); break;
+        case "Kitty": configured = configureKitty(terminal.configPath, scriptPath); break;
+        case "Alacritty": configured = configureAlacritty(terminal.configPath, scriptPath); break;
+        case "iTerm2": configured = configureITerm2(scriptPath); break;
+      }
+      console.log(configured
+        ? chalk.green("✓") + ` Configured ${terminal.name}`
+        : chalk.dim(`  ${terminal.name} already configured`)
+      );
+    } else {
+      console.log(chalk.yellow("!") + ` Terminal "${options.configureTerminal}" not found`);
+    }
+  } else if (!ni) {
+    await setupTerminal(rl);
+  }
 
   rl.close();
 
