@@ -42,7 +42,7 @@ The mobile client is a thin voice interface. All intelligence and orchestration 
 
 - Node/TypeScript on Hono
 - STT: Deepgram (prerecorded upload, push-to-talk)
-- TTS: Cartesia (WebSocket streaming PCM)
+- TTS: Deepgram Aura (WebSocket streaming PCM)
 - Orchestrator harness: pi-coding-agent (Anthropic API, session persistence, coding tools)
 - tmux orchestration layer (planned): discover panes, read output, inject text, copy between panes
 - User auth and session management

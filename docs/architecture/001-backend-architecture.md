@@ -29,7 +29,7 @@ This is the key architectural rule:
 
 - tmux/session logic depends on `normalized harness events`
 - client logic depends on `backend audio/text events`
-- neither should depend directly on Claude CLI JSON shape, Deepgram JSON shape, or Cartesia WebSocket message shape
+- neither should depend directly on Claude CLI JSON shape, Deepgram JSON shape, or any provider-specific WebSocket message shape
 - for the mobile client, audio ingestion and orchestration transport may be separate concerns
 
 ## Implemented Stack
@@ -263,7 +263,7 @@ Usefulness:
 
 Purpose:
 
-- test Cartesia TTS directly
+- test Deepgram TTS directly
 
 Input:
 
@@ -277,7 +277,7 @@ Response:
 
 Usefulness:
 
-- confirms the Cartesia credentials and WebSocket flow work
+- confirms the Deepgram TTS credentials and WebSocket flow work
 
 ### `POST /debug/stt`
 
@@ -319,7 +319,7 @@ Purpose:
 Implemented and verified:
 
 - Claude Code CLI can be run non-interactively through the backend and parsed into normalized events
-- Cartesia returns real TTS audio chunks
+- Deepgram TTS returns real streamed PCM audio chunks
 - Deepgram returns real STT transcripts for uploaded WAV audio
 - the WebSocket control plane serves as the only turn-execution transport
 
@@ -334,7 +334,7 @@ These are the backend truths a frontend agent should assume.
 
 ### Stable assumptions
 
-- the backend is intended to be the only thing talking to Claude CLI, Cartesia, and Deepgram
+- the backend is intended to be the only thing talking to Claude CLI and external speech providers such as Deepgram
 - the client should not call third-party providers directly
 - the client should treat the backend as the single voice/orchestration authority
 - the backend is designed to be reachable remotely later, for example over Tailscale
@@ -393,7 +393,7 @@ Those modules should consume normalized harness events, not raw Claude CLI JSON.
 
 Rejected because it would make future harness swaps expensive and would leak CLI-specific behavior through the backend.
 
-### Coupling the frontend directly to Cartesia or Deepgram
+### Coupling the frontend directly to external speech providers
 
 Rejected because it would push provider auth and provider-specific protocol concerns into the client and make later swaps painful.
 

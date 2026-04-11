@@ -44,7 +44,7 @@ Everything runs on the **Mac**. The iPhone is a thin audio client — it sends a
 │   │  (Python/FastAPI)                       │   │
 │   │  Deepgram STT (streaming)               │   │
 │   │  OverwatchBridgeLLMService              │   │
-│   │  Cartesia TTS (streaming)               │   │
+│   │  Deepgram Aura TTS (streaming)          │   │
 │   │  SmallWebRTC transport                  │   │
 │   └──────────────┬──────────────────────────┘   │
 │                  │ SSE (bridge contract)         │
@@ -76,9 +76,9 @@ The iPhone never talks to the Overwatch backend directly in conversation mode �
 | Transport | Local audio buffers (Pi) / SmallWebRTC (browser) | SmallWebRTC (iPhone → Mac) |
 | STT | Deepgram (Pi) / Whisper MLX (cloud) | Deepgram (Mac) |
 | LLM bridge | SSE to Hermes Bridge | SSE to Overwatch backend |
-| TTS | Cartesia → LocalTTSPlayer (Pi) / WebRTC (browser) | Cartesia → WebRTC (iPhone) |
+| TTS | Deepgram Aura → LocalTTSPlayer (Pi) / WebRTC (browser) | Deepgram Aura → WebRTC (iPhone) |
 
-The Overwatch backend stays unchanged — we add a bridge endpoint that the Pipecat service calls.
+The Overwatch backend remains the main Node/Hono control plane, but the speech-provider assumptions in this plan should stay aligned with the current backend choice of Deepgram for both STT and TTS. We still add a bridge endpoint that the Pipecat service calls.
 
 ## Bridge Contract
 
@@ -164,13 +164,13 @@ overwatch-voice/
   Dockerfile
 ```
 
-Pipeline chain (same as halo-2 cloud):
+Pipeline chain (same as halo-2 cloud, updated to match the current Overwatch backend speech stack):
 ```python
 transport.input()
   → Deepgram STT (nova-3, streaming, 300ms endpointing)
   → user_aggregator
   → OverwatchBridgeLLMService (SSE bridge to Node backend)
-  → Cartesia TTS (sonic-2, 24kHz)
+  → Deepgram Aura TTS (24kHz linear16 websocket streaming)
   → transport.output()
   → assistant_aggregator
 ```
@@ -263,7 +263,7 @@ The user's Tailscale IP (e.g. `100.89.176.59`) is already configured in the app.
 
 - Create `overwatch-voice/` with Python/FastAPI
 - Copy and adapt HermesBridgeLLMService from halo-2
-- Pipeline: Deepgram STT → OverwatchBridgeLLMService → Cartesia TTS → SmallWebRTC output
+- Pipeline: Deepgram STT → OverwatchBridgeLLMService → Deepgram Aura TTS → SmallWebRTC output
 - Test with halo-2's web test client (browser WebRTC)
 
 ### Phase 3: React Native integration
