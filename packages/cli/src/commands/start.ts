@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { existsSync } from "node:fs";
 import chalk from "chalk";
 import qrcode from "qrcode-terminal";
@@ -17,23 +18,27 @@ async function createRoom(relayUrl: string): Promise<RoomResponse> {
   return (await res.json()) as RoomResponse;
 }
 
+function findAppRoot(): string {
+  // Check cwd first (dev), then installed location
+  if (existsSync(join(process.cwd(), "src/index.ts"))) return process.cwd();
+  if (existsSync(join(process.cwd(), "dist/index.js"))) return process.cwd();
+  const installed = join(homedir(), ".overwatch", "app");
+  if (existsSync(join(installed, "src/index.ts"))) return installed;
+  if (existsSync(join(installed, "dist/index.js"))) return installed;
+  throw new Error("Cannot find Overwatch backend. Try reinstalling: eval \"$(curl -fsSL https://raw.githubusercontent.com/skap3214/overwatch/main/install.sh)\"");
+}
+
 function startBackend(port: number, config: import("../config.js").OverwatchConfig): ChildProcess {
-  // Find the backend entry point relative to the CLI
-  // In development: ../../src/index.ts (from packages/cli/)
-  // When published: the user clones the repo and runs from root
+  const appRoot = findAppRoot();
   const possiblePaths = [
-    join(process.cwd(), "src/index.ts"),
-    join(process.cwd(), "dist/index.js"),
+    join(appRoot, "src/index.ts"),
+    join(appRoot, "dist/index.js"),
   ];
 
-  const entryPoint = possiblePaths.find((p) => existsSync(p));
-  if (!entryPoint) {
-    throw new Error(
-      "Cannot find backend entry point. Run this from the overwatch repo root."
-    );
-  }
+  const entryPoint = possiblePaths.find((p) => existsSync(p))!;
 
   const child = spawn("npx", ["tsx", entryPoint], {
+    cwd: appRoot,
     env: {
       ...process.env,
       PORT: String(port),

@@ -54,6 +54,12 @@ exec npx --prefix "$HOME/.overwatch/app" tsx "$HOME/.overwatch/app/packages/cli/
 SCRIPT
 chmod +x "$OVERWATCH_BIN/overwatch"
 
+cat > "$OVERWATCH_BIN/pi" << 'SCRIPT'
+#!/bin/bash
+exec npx --prefix "$HOME/.overwatch/app" @mariozechner/pi-coding-agent "$@"
+SCRIPT
+chmod +x "$OVERWATCH_BIN/pi"
+
 # Add to PATH if not already there
 SHELL_RC=""
 if [ -f "$HOME/.zshrc" ]; then
