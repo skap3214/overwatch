@@ -368,7 +368,7 @@ interface SetupOptions {
 }
 
 export async function setupCommand(options: SetupOptions = {}): Promise<void> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  let rl = createInterface({ input: process.stdin, output: process.stdout });
   const config = loadConfig();
   const ni = options.nonInteractive ?? false;
 
@@ -404,6 +404,9 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
       console.log(chalk.yellow("!") + " AI agent not configured — run `overwatch setup` interactively or `pi` to set up.");
     } else {
       await loginWithSDK(rl);
+      // Recreate readline — prompts library disrupts the original one
+      rl.close();
+      rl = createInterface({ input: process.stdin, output: process.stdout });
     }
   }
   console.log("");
