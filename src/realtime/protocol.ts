@@ -1,4 +1,5 @@
 import type { NotificationEvent } from "../notifications/store.js";
+import type { ScheduledMonitor } from "../extensions/scheduler.js";
 
 export interface RealtimeEnvelope<T = unknown> {
   id?: string;
@@ -15,6 +16,7 @@ export type ClientEnvelope =
 export type ServerEnvelope =
   | RealtimeEnvelope<{ serverTime: string }>
   | RealtimeEnvelope<{ notifications: NotificationEvent[] }>
+  | RealtimeEnvelope<{ monitors: ScheduledMonitor[] }>
   | RealtimeEnvelope<{ turnId: string; position: number }>
   | RealtimeEnvelope<{ turnId: string }>
   | RealtimeEnvelope<{ turnId: string; text: string }>

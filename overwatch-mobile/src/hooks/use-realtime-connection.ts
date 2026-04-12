@@ -3,8 +3,9 @@ import { realtimeClient } from "../services/realtime";
 import { useConnectionStore } from "../stores/connection-store";
 import { useTurnStore } from "../stores/turn-store";
 import { useNotificationsStore } from "../stores/notifications-store";
+import { useMonitorsStore } from "../stores/monitors-store";
 import { useAudioPlayer } from "./use-audio-player";
-import type { NotificationEvent, WsEnvelope } from "../types";
+import type { NotificationEvent, ScheduledMonitor, WsEnvelope } from "../types";
 
 // Shared ref so other hooks can reset audio state on cancel/interrupt
 export const audioActiveRef = { current: false };
@@ -26,10 +27,15 @@ export function useRealtimeConnection() {
     // Set when turn.started arrives; all subsequent events for that turn
     // are dropped if turnGeneration has moved past this value.
     let fgGen = turnGeneration;
-    let bgGen = -1; // background turns get their own tracking
 
     const isFgStale = () => fgGen !== turnGeneration;
-    const isBgStale = () => bgGen !== turnGeneration;
+
+    // Background turns are never dropped.  They are serialized by the
+    // coordinator on the backend (one at a time, WebSocket messages in
+    // order), so there is no risk of interleaving or stale events.
+    // Previous approaches (bgGen counter, turn-ID matching) caused
+    // events to be silently lost when the useEffect closure re-ran or
+    // when the user interacted during a background turn.
 
     realtimeClient.setHandlers({
       onStatus: (status) => {
@@ -53,12 +59,22 @@ export function useRealtimeConnection() {
             useNotificationsStore.getState().upsertNotification(notification);
             break;
           }
+          case "monitor.snapshot":
+          case "monitor.updated": {
+            const monitors = (
+              envelope.payload as { monitors: ScheduledMonitor[] }
+            ).monitors;
+            useMonitorsStore.getState().replaceMonitors(monitors);
+            break;
+          }
 
           // ── Foreground turn events ───────────────────────────────
           case "turn.started":
             // Lock this turn to the current generation
             fgGen = turnGeneration;
             audioActiveRef.current = false;
+            // Flush stale pending message (same reason as background.turn_started)
+            useTurnStore.setState({ pendingMessageId: null, pendingText: "" });
             useTurnStore.getState().setTurnState("processing");
             break;
           case "turn.text_delta":
@@ -125,9 +141,14 @@ export function useRealtimeConnection() {
           }
 
           // ── Background turn events ──────────────────────────────
+          // Always processed — never dropped.  See comment above.
           case "background.turn_started":
-            bgGen = turnGeneration;
             audioActiveRef.current = false;
+            // Flush any stale pending assistant message from a previous turn
+            // whose handleDone was dropped (e.g. by the old bgGen gate).
+            // Without this, handleTextDelta appends to a ghost message ID
+            // and the new turn's response is silently lost.
+            useTurnStore.setState({ pendingMessageId: null, pendingText: "" });
             useTurnStore
               .getState()
               .addUserMessage(
@@ -140,19 +161,16 @@ export function useRealtimeConnection() {
             useTurnStore.getState().setTurnState("processing");
             break;
           case "background.turn_text_delta":
-            if (isBgStale()) break;
             useTurnStore.getState().handleTextDelta(
               (envelope.payload as { text: string }).text
             );
             break;
           case "background.turn_tool_call":
-            if (isBgStale()) break;
             useTurnStore.getState().handleToolCall(
               (envelope.payload as { name: string }).name
             );
             break;
           case "background.turn_audio_chunk": {
-            if (isBgStale()) break;
             const bgState = useTurnStore.getState().turnState;
             if (bgState === "recording" || bgState === "preparing") break;
             if (!audioActiveRef.current) {
@@ -168,7 +186,6 @@ export function useRealtimeConnection() {
           case "background.turn_tts_error":
             break;
           case "background.turn_error":
-            if (isBgStale()) break;
             useTurnStore.getState().handleError(
               (envelope.payload as { message: string }).message
             );
@@ -176,7 +193,6 @@ export function useRealtimeConnection() {
             audioActiveRef.current = false;
             break;
           case "background.turn_done":
-            if (isBgStale()) break;
             if (audioActiveRef.current) {
               player.markEnd();
             }

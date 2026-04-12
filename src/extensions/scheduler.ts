@@ -11,6 +11,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { Cron } from "croner";
 import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -29,6 +30,44 @@ export interface ScheduledTask {
   description?: string;
 }
 
+export interface ScheduledMonitor {
+  id: string;
+  title: string;
+  scheduleLabel: string;
+  nextRunAt: string | null;
+  lastFiredAt: string | null;
+  recurring: boolean;
+}
+
+type SchedulerEvents = {
+  changed: [ScheduledMonitor[]];
+};
+
+class SchedulerEmitter extends EventEmitter {
+  emit<K extends keyof SchedulerEvents>(
+    event: K,
+    ...args: SchedulerEvents[K]
+  ): boolean {
+    return super.emit(event, ...args);
+  }
+
+  on<K extends keyof SchedulerEvents>(
+    event: K,
+    listener: (...args: SchedulerEvents[K]) => void
+  ): this {
+    return super.on(event, listener);
+  }
+
+  off<K extends keyof SchedulerEvents>(
+    event: K,
+    listener: (...args: SchedulerEvents[K]) => void
+  ): this {
+    return super.off(event, listener);
+  }
+}
+
+const schedulerEmitter = new SchedulerEmitter();
+
 function ok(text: string) {
   return { content: [{ type: "text" as const, text }], details: {} };
 }
@@ -42,9 +81,33 @@ export function loadScheduledTasks(): ScheduledTask[] {
   }
 }
 
+function sanitizeTasks(tasks: ScheduledTask[]): ScheduledTask[] {
+  return tasks.map((task) => ({
+    ...task,
+    description: task.description?.trim() || undefined,
+  }));
+}
+
+function normalizeTasks(tasks: ScheduledTask[]): ScheduledTask[] {
+  return sanitizeTasks(tasks)
+    .slice()
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function serializeTasks(tasks: ScheduledTask[]): string {
+  return JSON.stringify(normalizeTasks(tasks));
+}
+
+let lastSavedTasksSnapshot = serializeTasks(loadScheduledTasks());
+
 export function saveScheduledTasks(tasks: ScheduledTask[]): void {
   if (!existsSync(TASKS_DIR)) mkdirSync(TASKS_DIR, { recursive: true });
-  writeFileSync(TASKS_PATH, JSON.stringify(tasks, null, 2), "utf-8");
+  const sanitized = sanitizeTasks(tasks);
+  const nextSnapshot = serializeTasks(sanitized);
+  if (nextSnapshot === lastSavedTasksSnapshot) return;
+  writeFileSync(TASKS_PATH, JSON.stringify(sanitized, null, 2), "utf-8");
+  lastSavedTasksSnapshot = nextSnapshot;
+  schedulerEmitter.emit("changed", listScheduledMonitorsFromTasks(sanitized));
 }
 
 export function intervalToCron(interval: string): string | null {
@@ -95,17 +158,109 @@ export function getNextFireTime(cronExpr: string): Date | null {
   }
 }
 
+function formatIntervalMs(intervalMs: number): string {
+  const totalSeconds = Math.max(1, Math.round(intervalMs / 1000));
+  if (totalSeconds % 86_400 === 0) return `${totalSeconds / 86_400}d`;
+  if (totalSeconds % 3_600 === 0) return `${totalSeconds / 3_600}h`;
+  if (totalSeconds % 60 === 0) return `${totalSeconds / 60}m`;
+  return `${totalSeconds}s`;
+}
+
+function getTaskScheduleLabel(task: ScheduledTask): string {
+  if (!task.intervalMs) return task.cron;
+  const interval = formatIntervalMs(task.intervalMs);
+  return task.recurring ? `every ${interval}` : `once, ${interval}`;
+}
+
+export function getScheduledTaskNextRun(task: ScheduledTask): Date | null {
+  if (task.intervalMs) {
+    return new Date((task.lastFiredAt ?? task.createdAt) + task.intervalMs);
+  }
+  return getNextFireTime(task.cron);
+}
+
+function getScheduledTaskTitle(task: ScheduledTask): string {
+  return task.description || `Scheduled task ${task.id}`;
+}
+
+function getMonitorIdentity(task: ScheduledTask): string {
+  const haystack = `${task.description ?? ""}\n${task.prompt}`;
+
+  // Match any tmux sub-command with a -t target flag:
+  //   tmux capture-pane -t 0:1.1
+  //   tmux send-keys -t 9 -l "hello"
+  //   `tmux capture-pane -t 0 -p`
+  const captureTarget =
+    haystack.match(/tmux\s+\S+[^;|&\n]*?-t\s+[`'"]*([0-9]+(?:[:.][0-9.]+)*)/i)?.[1] ??
+    haystack.match(/\b(?:session|pane|window)\s+([0-9]+(?:[:.][0-9.]+)*)/i)?.[1] ??
+    null;
+
+  if (!captureTarget) return task.id;
+
+  // Monitors are presented at the tmux-session level in the mobile header.
+  // If multiple scheduled tasks target panes/windows in the same session, show
+  // only the newest one so stale setup attempts do not create duplicate badges.
+  return captureTarget.split(/[:.]/)[0]?.trim() || captureTarget;
+}
+
+function listScheduledMonitorsFromTasks(tasks: ScheduledTask[]): ScheduledMonitor[] {
+  const deduped = new Map<string, ScheduledTask>();
+
+  for (const task of tasks) {
+    const key = getMonitorIdentity(task);
+    const existing = deduped.get(key);
+    if (!existing) {
+      deduped.set(key, task);
+      continue;
+    }
+
+    const existingUpdatedAt = existing.lastFiredAt ?? existing.createdAt;
+    const candidateUpdatedAt = task.lastFiredAt ?? task.createdAt;
+    if (candidateUpdatedAt >= existingUpdatedAt) {
+      deduped.set(key, task);
+    }
+  }
+
+  return Array.from(deduped.values())
+    .map((task) => {
+      const nextRun = getScheduledTaskNextRun(task);
+      return {
+        id: task.id,
+        title: getScheduledTaskTitle(task),
+        scheduleLabel: getTaskScheduleLabel(task),
+        nextRunAt: nextRun?.toISOString() ?? null,
+        lastFiredAt:
+          typeof task.lastFiredAt === "number"
+            ? new Date(task.lastFiredAt).toISOString()
+            : null,
+        recurring: task.recurring,
+      } satisfies ScheduledMonitor;
+    })
+    .sort((a, b) => {
+      if (!a.nextRunAt && !b.nextRunAt) return a.title.localeCompare(b.title);
+      if (!a.nextRunAt) return 1;
+      if (!b.nextRunAt) return -1;
+      return a.nextRunAt.localeCompare(b.nextRunAt);
+    });
+}
+
+export function listScheduledMonitors(): ScheduledMonitor[] {
+  return listScheduledMonitorsFromTasks(loadScheduledTasks());
+}
+
+export function subscribeScheduledMonitors(
+  listener: (monitors: ScheduledMonitor[]) => void
+): () => void {
+  schedulerEmitter.on("changed", listener);
+  return () => schedulerEmitter.off("changed", listener);
+}
+
 function formatTask(task: ScheduledTask): string {
   const type = task.recurring ? "recurring" : "one-shot";
-  const next =
-    task.intervalMs && task.recurring
-      ? new Date((task.lastFiredAt ?? task.createdAt) + task.intervalMs)
-      : getNextFireTime(task.cron);
+  const next = getScheduledTaskNextRun(task);
   const nextStr = next ? next.toLocaleString() : "unknown";
   const desc = task.description ? ` — ${task.description}` : "";
-  const schedule = task.intervalMs
-    ? `every ${Math.round(task.intervalMs / 1000)}s`
-    : task.cron;
+  const schedule = getTaskScheduleLabel(task).toLowerCase();
   return `[${task.id}] ${type} (${schedule}) next: ${nextStr}${desc}\n  prompt: "${task.prompt.slice(0, 100)}"`;
 }
 

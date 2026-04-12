@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, Keyboard, Modal, Alert } from "react-native";
-import { Sun, Moon, Monitor, ChevronRight, Hand, QrCode, Unplug } from "lucide-react-native";
+import { Sun, Moon, Monitor, ChevronLeft, Hand, QrCode, Unplug } from "lucide-react-native";
 import { GlassSurface } from "./GlassSurface";
 import { useConnectionStore } from "../stores/connection-store";
 import { useThemeStore, type ThemeMode } from "../stores/theme-store";
@@ -100,15 +100,9 @@ export function SettingsPage({ onClose }: Props) {
       contentContainerStyle={{ padding: 20, gap: 24 }}
       keyboardDismissMode="on-drag"
     >
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <Text style={{ color: colors.text, fontSize: 22, fontFamily: "IosevkaAile-Bold" }}>
-          Settings
-        </Text>
-        <Pressable onPress={onClose} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-          <Text style={{ color: colors.textDim, fontSize: 14, fontFamily: "IosevkaAile-Regular" }}>Chat</Text>
-          <ChevronRight size={16} color={colors.textDim} />
-        </Pressable>
-      </View>
+      <Pressable onPress={onClose} hitSlop={16} style={{ alignSelf: "flex-start" }}>
+        <ChevronLeft size={28} color={colors.text} />
+      </Pressable>
 
       {/* QR Scanner Modal */}
       <Modal visible={showQR} animationType="slide">

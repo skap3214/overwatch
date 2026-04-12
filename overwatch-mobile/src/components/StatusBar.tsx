@@ -1,16 +1,17 @@
 import React, { useEffect, useRef } from "react";
-import { View, Text, Pressable, Animated } from "react-native";
+import { View, Text, Pressable, Animated, Alert } from "react-native";
 import { useConnectionStore } from "../stores/connection-store";
-import { useNotificationsStore } from "../stores/notifications-store";
+import { useMonitorsStore } from "../stores/monitors-store";
 import { useTurnStore } from "../stores/turn-store";
 import { useColors } from "../theme";
 import { GlassSurface } from "./GlassSurface";
-import { Settings, Plus } from "lucide-react-native";
+import { Settings, Trash2, Clock3 } from "lucide-react-native";
 import type { ConnectionStatus } from "../types";
 
 type Props = {
   onSettingsPress: () => void;
   onNewChat: () => void;
+  onMonitorsPress: () => void;
 };
 
 const TURN_LABELS: Record<string, string> = {
@@ -29,11 +30,11 @@ const CONNECTION_LABELS: Record<ConnectionStatus, string> = {
 
 const AMBER = "#f59e0b";
 
-export function StatusBar({ onSettingsPress, onNewChat }: Props) {
+export function StatusBar({ onSettingsPress, onNewChat, onMonitorsPress }: Props) {
   const colors = useColors();
   const connectionStatus = useConnectionStore((s) => s.connectionStatus);
   const turnState = useTurnStore((s) => s.turnState);
-  const unreadCount = useNotificationsStore((s) => s.unreadCount());
+  const monitorCount = useMonitorsStore((s) => s.monitorCount());
 
   const dotColor =
     connectionStatus === "connected" ? colors.success
@@ -72,14 +73,22 @@ export function StatusBar({ onSettingsPress, onNewChat }: Props) {
         zIndex: 10,
       }}
     >
-      <Pressable onPress={onNewChat} hitSlop={16}>
+      <Pressable
+        onPress={() =>
+          Alert.alert("Clear chat?", "This will delete all messages.", [
+            { text: "Cancel", style: "cancel" },
+            { text: "Clear", style: "destructive", onPress: onNewChat },
+          ])
+        }
+        hitSlop={16}
+      >
         <GlassSurface
           isInteractive
           style={{ padding: 10, borderRadius: 14 }}
           fallbackStyle={{ backgroundColor: colors.surface }}
           tintColor={colors.surface}
         >
-          <Plus size={26} color={colors.text} />
+          <Trash2 size={22} color={colors.text} />
         </GlassSurface>
       </Pressable>
 
@@ -98,25 +107,30 @@ export function StatusBar({ onSettingsPress, onNewChat }: Props) {
             {label}
           </Text>
         ) : null}
-        {unreadCount > 0 ? (
-          <View
-            style={{
-              backgroundColor: colors.surface,
-              borderRadius: 999,
-              paddingHorizontal: 8,
-              paddingVertical: 2,
-            }}
-          >
-            <Text
-              style={{
-                color: colors.textDim,
-                fontSize: 11,
-                fontFamily: "IosevkaAile-Regular",
-              }}
+        {monitorCount > 0 ? (
+          <Pressable onPress={onMonitorsPress} hitSlop={16}>
+            <GlassSurface
+              isInteractive
+              style={{ padding: 8, borderRadius: 12 }}
+              fallbackStyle={{ backgroundColor: colors.surface }}
+              tintColor={colors.surface}
             >
-              {unreadCount} unread
-            </Text>
-          </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                <Clock3 size={18} color={colors.text} />
+                {monitorCount >= 2 ? (
+                  <Text
+                    style={{
+                      color: colors.textDim,
+                      fontSize: 12,
+                      fontFamily: "IosevkaAile-Medium",
+                    }}
+                  >
+                    {monitorCount > 8 ? "8+" : monitorCount}
+                  </Text>
+                ) : null}
+              </View>
+            </GlassSurface>
+          </Pressable>
         ) : null}
       </View>
 

@@ -98,6 +98,18 @@ When the user asks about tmux sessions, running agents, or what different sessio
 - do not rely only on memory or prior notes
 - if memory exists, use it only as supplemental context after checking live tmux state
 - do not ask the user for session numbers until you have first tried to inspect the tmux server yourself
+
+### Identifying what is running in a session
+
+NEVER assume a terminal session is running Claude Code or any specific agent. Always check the actual pane content for identifying signs:
+
+- Claude Code: shows "claude" or "Claude Code" in the prompt, uses ❯ prompt character, shows tool call blocks
+- Codex: shows "codex" in the prompt or header
+- Cursor Agent: shows "cursor" in the prompt or header
+- OpenCode: shows "opencode" in the prompt or header
+- Other processes: could be a dev server (expo, vite, next), a backend process, a shell, or anything else
+
+Read the pane content with \`tmux capture-pane\` and look at process indicators, prompt style, log output, and visible UI elements before identifying what is running. Do not default to "Claude Code" just because it is a terminal session.
 `;
 
 interface PiCodingAgentHarnessOptions {
@@ -115,6 +127,8 @@ export class PiCodingAgentHarness implements OrchestratorHarness {
   private readonly systemPrompt: string;
   private readonly defaultCwd: string;
   private session: Session | null = null;
+  /** Tracks the in-flight session.prompt() so we never run two concurrently. */
+  private pendingPrompt: Promise<void> = Promise.resolve();
 
   constructor(options: PiCodingAgentHarnessOptions = {}) {
     this.apiKey = options.apiKey;
@@ -163,6 +177,11 @@ export class PiCodingAgentHarness implements OrchestratorHarness {
 
   async *runTurn(request: HarnessTurnRequest): AsyncIterable<HarnessEvent> {
     const session = await this.ensureSession();
+
+    // Serialize: if a previous prompt is still settling (e.g. an aborted
+    // foreground turn), wait for it before starting a new API call.
+    await this.pendingPrompt.catch(() => {});
+
     const queue = new AsyncQueue<HarnessEvent>();
 
     // Wire abort signal to session.abort() so the LLM call stops
@@ -215,6 +234,9 @@ export class PiCodingAgentHarness implements OrchestratorHarness {
         queue.end();
       }
     })();
+
+    // Track so the next runTurn waits for this prompt to settle
+    this.pendingPrompt = promptTask.then(() => {}, () => {});
 
     for await (const event of queue) {
       yield event;

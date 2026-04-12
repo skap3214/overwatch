@@ -109,7 +109,9 @@ export const useTurnStore = create<TurnStore>((set, get) => ({
 
   handleTextDelta: (text) => {
     const { pendingMessageId, pendingText, messages } = get();
-    if (!pendingMessageId) {
+    if (!pendingMessageId || !messages.some((m) => m.id === pendingMessageId)) {
+      // No pending message, or the pending ID is stale (message was removed
+      // or belongs to a different session).  Create a fresh assistant message.
       const id = makeId();
       const msg: Message = { id, role: "assistant", text, timestamp: Date.now() };
       set({ messages: [...messages, msg], pendingMessageId: id, pendingText: text });

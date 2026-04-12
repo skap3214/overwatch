@@ -12,7 +12,7 @@ import { useTurnStore } from "../src/stores/turn-store";
 import { useRecorder } from "../src/hooks/use-audio-recorder";
 import { useColors } from "../src/theme";
 import { StatusBar as OverwatchStatusBar } from "../src/components/StatusBar";
-import { NotificationsBanner } from "../src/components/NotificationsBanner";
+import { MonitorsDropdown } from "../src/components/MonitorsDropdown";
 import { TranscriptView } from "../src/components/TranscriptView";
 import { InputBar } from "../src/components/InputBar";
 import { PTTButton } from "../src/components/PTTButton";
@@ -31,6 +31,7 @@ export default function App() {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showQR, setShowQR] = useState(false);
+  const [showMonitors, setShowMonitors] = useState(false);
 
   useEffect(() => {
     const showSub = Keyboard.addListener("keyboardWillShow", () => setKeyboardVisible(true));
@@ -58,6 +59,8 @@ export default function App() {
 
   const goToSettings = useCallback(() => setShowSettings(true), []);
   const closeSettings = useCallback(() => setShowSettings(false), []);
+  const openMonitors = useCallback(() => setShowMonitors(true), []);
+  const closeMonitors = useCallback(() => setShowMonitors(false), []);
 
   const handleNewChat = useCallback(() => {
     useTurnStore.getState().clearMessages();
@@ -126,12 +129,11 @@ export default function App() {
         <OverwatchStatusBar
           onSettingsPress={goToSettings}
           onNewChat={handleNewChat}
+          onMonitorsPress={openMonitors}
         />
 
         {connectionStatus === "connected" ? (
           <>
-            <NotificationsBanner />
-
             <TranscriptView />
 
             <View
@@ -194,7 +196,9 @@ export default function App() {
         <QRScanner onClose={() => setShowQR(false)} />
       </Modal>
 
-      {/* Settings Modal */}
+      <MonitorsDropdown visible={showMonitors} onClose={closeMonitors} />
+
+      {/* Settings */}
       <Modal visible={showSettings} animationType="slide">
         <View style={{ flex: 1, backgroundColor: colors.bg }}>
           <View style={{ height: Platform.OS === "ios" ? 54 : 30 }} />

@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { notificationStore } from "../notifications/store.js";
+import {
+  listScheduledMonitors,
+  subscribeScheduledMonitors,
+} from "../extensions/scheduler.js";
 import { TurnCoordinator } from "../orchestrator/turn-coordinator.js";
 import type { ClientEnvelope } from "./protocol.js";
 
@@ -72,6 +76,15 @@ export function attachRealtimeServer(
     }
   );
 
+  const unsubscribeMonitors = subscribeScheduledMonitors((monitors) => {
+    for (const client of clients.values()) {
+      sendEnvelope(client.socket, {
+        type: "monitor.updated",
+        payload: { monitors },
+      });
+    }
+  });
+
   server.on("upgrade", (request: any, socket: any, head: any) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     if (url.pathname !== "/api/v1/ws") {
@@ -109,6 +122,10 @@ export function attachRealtimeServer(
         sendEnvelope(socket, {
           type: "notification.snapshot",
           payload: { notifications: notificationStore.list(100) },
+        });
+        sendEnvelope(socket, {
+          type: "monitor.snapshot",
+          payload: { monitors: listScheduledMonitors() },
         });
         return;
       }
@@ -205,6 +222,7 @@ export function attachRealtimeServer(
   server.on("close", () => {
     unsubscribeCoordinator();
     unsubscribeNotifications();
+    unsubscribeMonitors();
     wss.close();
   });
 }

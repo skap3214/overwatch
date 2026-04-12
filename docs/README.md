@@ -6,7 +6,7 @@ Start here before extending Overwatch.
 
 - Primary backend language: TypeScript on Node
 - Primary orchestrator harness: pi-coding-agent (library, Anthropic API via OAuth)
-- Current orchestration support beyond speech: scheduler support, persistent memory under `~/.overwatch/memory`, realtime notifications, and a bidirectional WebSocket control-plane slice
+- Current orchestration support beyond speech: scheduler support, persistent memory under `~/.overwatch/memory`, realtime notifications, scheduled monitor snapshots over the WebSocket control plane, and a bidirectional control-plane slice
 - Current STT provider: Deepgram prerecorded transcription
 - Current TTS provider: Cartesia WebSocket streaming TTS
 - Current backend status: realtime WebSocket endpoint implemented, notification store and scheduler runner implemented, dedicated STT endpoint implemented, web frontend exists as dev fallback, iOS app is next

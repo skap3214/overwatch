@@ -312,7 +312,7 @@ Purpose:
 
 - provide the realtime control-plane socket
 - carry foreground turn events and background notification events over one bidirectional channel
-- serve as the primary orchestration transport for mobile text turns, transcript-derived voice turns, notifications, and acknowledgements
+- serve as the primary orchestration transport for mobile text turns, transcript-derived voice turns, notifications, scheduled monitor snapshots/updates, and acknowledgements
 
 ## Current End-To-End State
 
@@ -350,7 +350,7 @@ These are the backend truths a frontend agent should assume.
 The mobile client should use:
 
 - `POST /api/v1/stt` for recorded audio transcription
-- `GET /api/v1/ws` for all turn execution, notifications, and acknowledgements
+- `GET /api/v1/ws` for all turn execution, notifications, scheduled task monitor state, and acknowledgements
 
 This keeps media ingestion separate from the realtime control plane while keeping turn execution on a single transport.
 

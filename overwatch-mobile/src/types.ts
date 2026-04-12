@@ -46,6 +46,15 @@ export type NotificationEvent = {
   metadata?: Record<string, unknown>;
 };
 
+export type ScheduledMonitor = {
+  id: string;
+  title: string;
+  scheduleLabel: string;
+  nextRunAt: string | null;
+  lastFiredAt: string | null;
+  recurring: boolean;
+};
+
 export type WsEnvelope<T = unknown> = {
   id: string;
   createdAt: string;

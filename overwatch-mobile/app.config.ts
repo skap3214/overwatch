@@ -9,7 +9,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   orientation: "portrait",
   userInterfaceStyle: "dark",
   icon: "./assets/icon.png",
-  newArchEnabled: false,
   splash: {
     backgroundColor: "#0c0c0c",
   },
@@ -32,7 +31,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       foregroundImage: "./assets/adaptive-icon.png",
       backgroundColor: "#0c0c0c",
     },
-    edgeToEdgeEnabled: true,
     permissions: [
       "android.permission.RECORD_AUDIO",
       "android.permission.FOREGROUND_SERVICE",
