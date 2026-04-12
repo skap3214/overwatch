@@ -69,11 +69,22 @@ export class TurnCoordinator {
     private readonly tts: TtsAdapter
   ) {}
 
+  private currentAbortController: AbortController | null = null;
+
+  cancelCurrentTurn(): void {
+    if (this.currentAbortController) {
+      this.currentAbortController.abort();
+    }
+  }
+
   async runForegroundTurn(params: {
     prompt: string;
     send: ForegroundSend;
     abortSignal?: AbortSignal;
   }): Promise<void> {
+    // If a turn is already running, cancel it so this one starts immediately
+    this.cancelCurrentTurn();
+
     return new Promise<void>((resolve, reject) => {
       const job: ForegroundJob = {
         id: `turn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -84,15 +95,6 @@ export class TurnCoordinator {
         resolve,
         reject,
       };
-
-      const queuedAhead =
-        (this.currentJob ? 1 : 0) + this.queue.length;
-      if (queuedAhead > 0) {
-        params.send("turn.queued", {
-          turnId: job.id,
-          position: queuedAhead,
-        });
-      }
 
       this.queue.push(job);
       this.kick();
@@ -175,6 +177,15 @@ export class TurnCoordinator {
       job.reject(new Error("Turn cancelled"));
       return;
     }
+
+    // Merge the socket-level abort signal with our own cancel controller
+    const turnAbort = new AbortController();
+    this.currentAbortController = turnAbort;
+    if (job.abortSignal) {
+      job.abortSignal.addEventListener("abort", () => turnAbort.abort(), { once: true });
+    }
+    const abortSignal = turnAbort.signal;
+
     job.send("turn.started", { turnId: job.id });
     const textQueue = new AsyncQueue<string>();
 
@@ -182,8 +193,9 @@ export class TurnCoordinator {
       try {
         for await (const event of this.harness.runTurn({
           prompt: job.prompt,
-          abortSignal: job.abortSignal,
+          abortSignal,
         })) {
+          if (abortSignal.aborted) break;
           if (event.type === "text_delta") {
             job.send("turn.text_delta", { turnId: job.id, text: event.text });
             textQueue.push(event.text);
@@ -207,7 +219,7 @@ export class TurnCoordinator {
       try {
         for await (const event of this.tts.synthesize({
           textChunks: textQueue,
-          abortSignal: job.abortSignal,
+          abortSignal,
         })) {
           if (event.type === "audio_chunk") {
             const base64 = Buffer.from(event.data).toString("base64");
@@ -230,15 +242,32 @@ export class TurnCoordinator {
       }
     })();
 
+    // Race between normal completion and abort — if aborted, move on
+    // immediately so the next turn can start. The harness may still be
+    // running but its output is harmless (phone drops stale events).
+    const abortPromise = new Promise<"aborted">((resolve) => {
+      if (abortSignal.aborted) { resolve("aborted"); return; }
+      abortSignal.addEventListener("abort", () => resolve("aborted"), { once: true });
+    });
+
     try {
-      await Promise.allSettled([harnessPromise, ttsPromise]);
+      const result = await Promise.race([
+        Promise.allSettled([harnessPromise, ttsPromise]).then(() => "settled" as const),
+        abortPromise,
+      ]);
       job.send("turn.done", { turnId: job.id });
+      if (result === "aborted") {
+        // Let harness finish in the background — don't block the queue
+        Promise.allSettled([harnessPromise, ttsPromise]).catch(() => {});
+      }
       job.resolve();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Foreground turn failed";
       job.send("turn.error", { turnId: job.id, message });
       job.reject(error instanceof Error ? error : new Error(message));
+    } finally {
+      this.currentAbortController = null;
     }
   }
 

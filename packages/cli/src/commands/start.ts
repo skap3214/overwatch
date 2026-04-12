@@ -12,6 +12,18 @@ interface RoomResponse {
   roomId: string;
 }
 
+function printPairingDetails(roomCode: string, qrData: string): void {
+  console.log("Scan this QR code with the Overwatch app:");
+  console.log("");
+  qrcode.generate(qrData, { small: true }, (code: string) => {
+    console.log(code);
+  });
+  console.log("");
+  console.log(chalk.dim("Or enter manually:"));
+  console.log(chalk.dim(`  Room: ${roomCode}`));
+  console.log("");
+}
+
 async function createRoom(relayUrl: string): Promise<RoomResponse> {
   const res = await fetch(`${relayUrl}/api/room/create`, { method: "POST" });
   if (!res.ok) throw new Error(`Failed to create room: ${res.status}`);
@@ -111,6 +123,7 @@ export async function startCommand(): Promise<void> {
   console.log("");
 
   // 3. Start encrypted bridge
+  let showPairingDetails = () => {};
   const bridge = new RelayBridge({
     relayUrl,
     roomCode: room.room,
@@ -127,6 +140,10 @@ export async function startCommand(): Promise<void> {
     },
     onReconnecting: (target) => {
       console.log(chalk.yellow(`  ${target === "relay" ? "Relay" : "Backend"} connection lost, reconnecting...`));
+      if (target === "backend") {
+        console.log("");
+        showPairingDetails();
+      }
     },
     onReconnected: (target) => {
       console.log(chalk.green(`  ✓ ${target === "relay" ? "Relay" : "Backend"} reconnected`));
@@ -143,17 +160,12 @@ export async function startCommand(): Promise<void> {
   const qrData = JSON.stringify({
     r: room.room,
     k: bridge.publicKeyBase64,
+    ...(config.deepgramApiKey && { d: config.deepgramApiKey }),
   });
 
-  console.log("Scan this QR code with the Overwatch app:");
-  console.log("");
-  qrcode.generate(qrData, { small: true }, (code: string) => {
-    console.log(code);
-  });
-  console.log("");
-  console.log(chalk.dim(`Or enter manually:`));
-  console.log(chalk.dim(`  Room: ${room.room}`));
-  console.log("");
+  showPairingDetails = () => printPairingDetails(room.room, qrData);
+
+  showPairingDetails();
   console.log("Waiting for phone to connect...");
 
   // Handle graceful shutdown

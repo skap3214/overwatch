@@ -7,15 +7,18 @@ const BACKEND_URL_KEY = "overwatch_backend_url";
 type ConnectionStore = {
   backendURL: string;
   connectionStatus: ConnectionStatus;
+  deepgramApiKey: string;
   setBackendURL: (url: string) => Promise<void>;
   loadBackendURL: () => Promise<void>;
   setConnectionStatus: (status: ConnectionStatus) => void;
+  setDeepgramApiKey: (key: string) => void;
   checkHealth: () => Promise<void>;
 };
 
 export const useConnectionStore = create<ConnectionStore>((set, get) => ({
   backendURL: "",
   connectionStatus: "disconnected",
+  deepgramApiKey: "",
 
   setBackendURL: async (url: string) => {
     const trimmed = url.replace(/\/+$/, "");
@@ -44,6 +47,10 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
 
   setConnectionStatus: (status: ConnectionStatus) => {
     set({ connectionStatus: status });
+  },
+
+  setDeepgramApiKey: (key: string) => {
+    set({ deepgramApiKey: key });
   },
 
   checkHealth: async () => {

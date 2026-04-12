@@ -3,6 +3,7 @@ import { View, Text, KeyboardAvoidingView, Platform, Keyboard, Pressable, Modal 
 import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
 import { setAudioModeAsync } from "expo-audio";
+import * as Haptics from "expo-haptics";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useConnectionStore } from "../src/stores/connection-store";
 import { useThemeStore } from "../src/stores/theme-store";
@@ -23,7 +24,7 @@ import "../global.css";
 export default function App() {
   const colors = useColors();
   const { loadBackendURL, connectionStatus } = useConnectionStore();
-  const { sendText, sendVoice, cancel } = useOverwatchTurn();
+  const { sendText, sendVoice, cancel, stopAudio } = useOverwatchTurn();
   const { amplitude, startRecording, stopRecording } = useRecorder();
   useRealtimeConnection();
 
@@ -45,8 +46,8 @@ export default function App() {
 
   useEffect(() => {
     setAudioModeAsync({
-      allowsRecording: true,
-      interruptionMode: "doNotMix",
+      allowsRecording: false,
+      interruptionMode: "duckOthers",
       shouldPlayInBackground: false,
       playsInSilentMode: true,
       shouldRouteThroughEarpiece: false,
@@ -65,25 +66,38 @@ export default function App() {
   const handleTextSubmit = useCallback((text: string) => { sendText(text); }, [sendText]);
 
   const handleStartRecording = useCallback(async () => {
+    const t0 = Date.now();
+    // Stop any playing audio but don't cancel the backend turn
+    stopAudio();
+    console.log(`[perf] stopAudio: ${Date.now() - t0}ms`);
     try {
-      useTurnStore.getState().setTurnState("recording");
+      useTurnStore.getState().setTurnState("preparing");
+      const t1 = Date.now();
       await startRecording();
+      console.log(`[perf] startRecording: ${Date.now() - t1}ms (total from tap: ${Date.now() - t0}ms)`);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      useTurnStore.getState().setTurnState("recording");
     } catch (err) {
       console.error("startRecording failed:", err);
       useTurnStore.getState().setTurnState("idle");
     }
-  }, [startRecording]);
+  }, [startRecording, stopAudio]);
 
   const stoppingRef = useRef(false);
   const handleStopRecording = useCallback(async () => {
-    if (useTurnStore.getState().turnState !== "recording") return;
+    const state = useTurnStore.getState().turnState;
+    if (state !== "recording" && state !== "preparing") return;
     if (stoppingRef.current) return;
     stoppingRef.current = true;
+    const t0 = Date.now();
     useTurnStore.getState().setTurnState("processing");
     try {
       const result = await stopRecording();
+      console.log(`[perf] stopRecording: ${Date.now() - t0}ms`);
       if (result?.fileUri) {
+        const t1 = Date.now();
         sendVoice(result.fileUri, result.mimeType ?? "audio/m4a");
+        console.log(`[perf] sendVoice kicked off: ${Date.now() - t1}ms (total from stop: ${Date.now() - t0}ms)`);
       } else {
         useTurnStore.getState().setTurnState("idle");
       }
@@ -94,8 +108,6 @@ export default function App() {
       stoppingRef.current = false;
     }
   }, [stopRecording, sendVoice]);
-
-  const handleStopPlayback = useCallback(() => { cancel(); }, [cancel]);
 
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
@@ -139,7 +151,6 @@ export default function App() {
               <PTTButton
                 onStartRecording={handleStartRecording}
                 onStopRecording={handleStopRecording}
-                onStopPlayback={handleStopPlayback}
                 amplitude={amplitude}
               />
             </View>

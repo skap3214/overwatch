@@ -185,6 +185,10 @@ class RealtimeClient {
     return true;
   }
 
+  cancelTurn(): boolean {
+    return this.send("turn.cancel", {});
+  }
+
   startTextTurn(text: string): boolean {
     return this.send("turn.start", { text });
   }

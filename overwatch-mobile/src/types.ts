@@ -1,4 +1,4 @@
-export type TurnState = "idle" | "recording" | "processing" | "playing";
+export type TurnState = "idle" | "preparing" | "recording" | "processing" | "playing";
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting";
 

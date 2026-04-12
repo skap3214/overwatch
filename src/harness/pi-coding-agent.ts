@@ -165,6 +165,14 @@ export class PiCodingAgentHarness implements OrchestratorHarness {
     const session = await this.ensureSession();
     const queue = new AsyncQueue<HarnessEvent>();
 
+    // Wire abort signal to session.abort() so the LLM call stops
+    const abortHandler = () => { session.abort().catch(() => {}); };
+    if (request.abortSignal?.aborted) {
+      abortHandler();
+    } else {
+      request.abortSignal?.addEventListener("abort", abortHandler, { once: true });
+    }
+
     const unsubscribe = session.subscribe((event) => {
       if (event.type === "message_update") {
         const ame = event.assistantMessageEvent;
@@ -202,6 +210,7 @@ export class PiCodingAgentHarness implements OrchestratorHarness {
           raw: { error: err },
         });
       } finally {
+        request.abortSignal?.removeEventListener("abort", abortHandler);
         unsubscribe();
         queue.end();
       }

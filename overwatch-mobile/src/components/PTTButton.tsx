@@ -9,28 +9,23 @@ import { Mic, Square } from "lucide-react-native";
 type Props = {
   onStartRecording: () => void;
   onStopRecording: () => void;
-  onStopPlayback: () => void;
   amplitude: number;
 };
 
 const BTN = 46;
 
-export function PTTButton({ onStartRecording, onStopRecording, onStopPlayback, amplitude }: Props) {
+export function PTTButton({ onStartRecording, onStopRecording, amplitude }: Props) {
   const colors = useColors();
   const turnState = useTurnStore((s) => s.turnState);
 
+  const isPreparing = turnState === "preparing";
   const isRecording = turnState === "recording";
-  const isProcessing = turnState === "processing";
-  const isPlaying = turnState === "playing";
-  const isIdle = turnState === "idle";
 
   const handlePress = () => {
-    if (isPlaying) { onStopPlayback(); return; }
     if (isRecording) { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onStopRecording(); return; }
-    if (isIdle || isProcessing) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      onStartRecording();
-    }
+    if (isPreparing) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onStartRecording();
   };
 
   const active = isRecording;
@@ -71,10 +66,8 @@ export function PTTButton({ onStartRecording, onStopRecording, onStopPlayback, a
         }}
         tintColor={colors.surface}
       >
-        {isProcessing ? (
+        {isPreparing ? (
           <ActivityIndicator size="small" color={colors.textDim} />
-        ) : isPlaying ? (
-          <Square size={14} color={fg} fill={fg} />
         ) : (
           <Mic size={20} color={fg} />
         )}

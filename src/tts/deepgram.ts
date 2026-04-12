@@ -155,14 +155,18 @@ export class DeepgramTtsAdapter implements TtsAdapter {
     });
 
     ws.on("close", (_code: number, reason: Buffer) => {
+      if (abortError) {
+        if (pendingFlush) {
+          pendingFlush.reject(abortError);
+          pendingFlush = null;
+        }
+        queue.fail(abortError);
+        return;
+      }
       if (pendingFlush) {
         const error = new Error(reason.toString("utf-8") || "Deepgram TTS connection closed");
         pendingFlush.reject(error);
         pendingFlush = null;
-      }
-      if (abortError) {
-        queue.fail(abortError);
-        return;
       }
       if (!flushed && !receiverDone) {
         const message = reason.toString("utf-8") || "Deepgram TTS connection closed";
@@ -222,6 +226,8 @@ export class DeepgramTtsAdapter implements TtsAdapter {
         }
         awaitingFinalFlush = true;
         await sendFlush("final");
+      } catch {
+        // Abort or WS close rejected pendingFlush — expected during cancellation
       } finally {
         senderDone = true;
         finishIfReady();

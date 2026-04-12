@@ -24,6 +24,7 @@ export function QRScanner({ onClose }: Props) {
         // Short keys (new format)
         r?: string;
         k?: string;
+        d?: string; // Deepgram API key
         // Legacy keys
         relay?: string;
         room?: string;
@@ -33,6 +34,11 @@ export function QRScanner({ onClose }: Props) {
       const room = parsed.r || parsed.room;
       const hostPublicKey = parsed.k || parsed.hostPublicKey;
       const relayUrl = parsed.relay || "https://overwatch-relay.soami.workers.dev";
+
+      // Store Deepgram API key for client-side STT
+      if (parsed.d) {
+        useConnectionStore.getState().setDeepgramApiKey(parsed.d);
+      }
 
       if (!room || !hostPublicKey) {
         throw new Error("Invalid QR code");

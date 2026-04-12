@@ -113,6 +113,12 @@ export function attachRealtimeServer(
         return;
       }
 
+      if (envelope.type === "turn.cancel") {
+        console.log(`[realtime] turn.cancel from ${clientId}`);
+        coordinator.cancelCurrentTurn();
+        return;
+      }
+
       if (envelope.type === "turn.start") {
         console.log(`[realtime] turn.start from ${clientId}`);
         const text =
