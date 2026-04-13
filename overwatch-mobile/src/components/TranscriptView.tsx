@@ -58,7 +58,7 @@ function MessageBubble({ message, colors }: { message: Message; colors: ReturnTy
   );
 }
 
-export function TranscriptView() {
+export function TranscriptView({ topInset = 0 }: { topInset?: number }) {
   const colors = useColors();
   const messages = useTurnStore((s) => s.messages);
   const flatListRef = useRef<FlatList<Message>>(null);
@@ -75,8 +75,8 @@ export function TranscriptView() {
       data={messages}
       keyExtractor={(item) => item.id}
       renderItem={({ item }) => <MessageBubble message={item} colors={colors} />}
-      contentContainerStyle={{ paddingVertical: 8 }}
-      style={{ flex: 1, backgroundColor: colors.bg }}
+      contentContainerStyle={{ paddingTop: topInset, paddingBottom: 8 }}
+      style={{ flex: 1 }}
       keyboardDismissMode="on-drag"
       onScrollBeginDrag={() => Keyboard.dismiss()}
     />

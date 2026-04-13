@@ -2,11 +2,9 @@ import React, { useEffect, useRef } from "react";
 import { View, Text, Pressable, Animated, Alert } from "react-native";
 import { useConnectionStore } from "../stores/connection-store";
 import { useMonitorsStore } from "../stores/monitors-store";
-import { useTurnStore } from "../stores/turn-store";
 import { useColors } from "../theme";
 import { GlassSurface } from "./GlassSurface";
 import { Settings, Trash2, Clock3 } from "lucide-react-native";
-import type { ConnectionStatus } from "../types";
 
 type Props = {
   onSettingsPress: () => void;
@@ -14,26 +12,11 @@ type Props = {
   onMonitorsPress: () => void;
 };
 
-const TURN_LABELS: Record<string, string> = {
-  idle: "",
-  recording: "recording...",
-  processing: "thinking...",
-  playing: "speaking...",
-};
-
-const CONNECTION_LABELS: Record<ConnectionStatus, string> = {
-  connected: "Connected",
-  connecting: "Connecting...",
-  reconnecting: "Reconnecting...",
-  disconnected: "Disconnected",
-};
-
 const AMBER = "#f59e0b";
 
 export function StatusBar({ onSettingsPress, onNewChat, onMonitorsPress }: Props) {
   const colors = useColors();
   const connectionStatus = useConnectionStore((s) => s.connectionStatus);
-  const turnState = useTurnStore((s) => s.turnState);
   const monitorCount = useMonitorsStore((s) => s.monitorCount());
 
   const dotColor =
@@ -41,9 +24,6 @@ export function StatusBar({ onSettingsPress, onNewChat, onMonitorsPress }: Props
     : connectionStatus === "reconnecting" ? AMBER
     : connectionStatus === "connecting" ? colors.accent
     : colors.textDim;
-
-  const turnLabel = TURN_LABELS[turnState];
-  const label = turnLabel || CONNECTION_LABELS[connectionStatus];
 
   // Pulse animation for reconnecting
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -69,10 +49,10 @@ export function StatusBar({ onSettingsPress, onNewChat, onMonitorsPress }: Props
         justifyContent: "space-between",
         paddingHorizontal: 12,
         paddingVertical: 8,
-        overflow: "visible",
         zIndex: 10,
       }}
     >
+      {/* Left: clear chat */}
       <Pressable
         onPress={() =>
           Alert.alert("Clear chat?", "This will delete all messages.", [
@@ -92,31 +72,18 @@ export function StatusBar({ onSettingsPress, onNewChat, onMonitorsPress }: Props
         </GlassSurface>
       </Pressable>
 
+      {/* Right: monitors + settings */}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <Animated.View
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: 4,
-            backgroundColor: dotColor,
-            opacity: pulseAnim,
-          }}
-        />
-        {label ? (
-          <Text style={{ color: colors.textDim, fontSize: 12, fontFamily: "IosevkaAile-Regular" }}>
-            {label}
-          </Text>
-        ) : null}
         {monitorCount > 0 ? (
           <Pressable onPress={onMonitorsPress} hitSlop={16}>
             <GlassSurface
               isInteractive
-              style={{ padding: 8, borderRadius: 12 }}
+              style={{ padding: 10, borderRadius: 14 }}
               fallbackStyle={{ backgroundColor: colors.surface }}
               tintColor={colors.surface}
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-                <Clock3 size={18} color={colors.text} />
+                <Clock3 size={20} color={colors.text} />
                 {monitorCount >= 2 ? (
                   <Text
                     style={{
@@ -132,18 +99,26 @@ export function StatusBar({ onSettingsPress, onNewChat, onMonitorsPress }: Props
             </GlassSurface>
           </Pressable>
         ) : null}
+        <Pressable onPress={onSettingsPress} hitSlop={16}>
+          <GlassSurface
+            isInteractive
+            style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: 10, paddingRight: 12, paddingVertical: 10, borderRadius: 14 }}
+            fallbackStyle={{ backgroundColor: colors.surface }}
+            tintColor={colors.surface}
+          >
+            <Animated.View
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 4,
+                backgroundColor: dotColor,
+                opacity: pulseAnim,
+              }}
+            />
+            <Settings size={22} color={colors.text} />
+          </GlassSurface>
+        </Pressable>
       </View>
-
-      <Pressable onPress={onSettingsPress} hitSlop={16}>
-        <GlassSurface
-          isInteractive
-          style={{ padding: 10, borderRadius: 14 }}
-          fallbackStyle={{ backgroundColor: colors.surface }}
-          tintColor={colors.surface}
-        >
-          <Settings size={26} color={colors.text} />
-        </GlassSurface>
-      </Pressable>
     </View>
   );
 }

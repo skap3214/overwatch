@@ -5,6 +5,7 @@ import { useFonts } from "expo-font";
 import { setAudioModeAsync } from "expo-audio";
 import * as Haptics from "expo-haptics";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { LinearGradient } from "expo-linear-gradient";
 import { useConnectionStore } from "../src/stores/connection-store";
 import { useThemeStore } from "../src/stores/theme-store";
 import { useOverwatchTurn } from "../src/hooks/use-overwatch-turn";
@@ -70,7 +71,7 @@ export default function App() {
 
   const handleStartRecording = useCallback(async () => {
     const t0 = Date.now();
-    // Stop any playing audio but don't cancel the backend turn
+    // Stop TTS playback only — backend turn continues until new message is sent
     stopAudio();
     console.log(`[perf] stopAudio: ${Date.now() - t0}ms`);
     try {
@@ -124,17 +125,9 @@ export default function App() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={0}
       >
-        <View style={{ height: Platform.OS === "ios" ? 54 : 30 }} />
-
-        <OverwatchStatusBar
-          onSettingsPress={goToSettings}
-          onNewChat={handleNewChat}
-          onMonitorsPress={openMonitors}
-        />
-
         {connectionStatus === "connected" ? (
           <>
-            <TranscriptView />
+            <TranscriptView topInset={Platform.OS === "ios" ? 104 : 80} />
 
             <View
               style={{
@@ -190,6 +183,21 @@ export default function App() {
           </View>
         )}
       </KeyboardAvoidingView>
+
+      {/* Floating header with gradient fade */}
+      <View style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 }}>
+        <LinearGradient
+          colors={[`${colors.bg}ff`, `${colors.bg}e6`, `${colors.bg}99`, `${colors.bg}00`]}
+          locations={[0, 0.55, 0.8, 1]}
+          style={{ paddingTop: Platform.OS === "ios" ? 54 : 30, paddingBottom: 12 }}
+        >
+          <OverwatchStatusBar
+            onSettingsPress={goToSettings}
+            onNewChat={handleNewChat}
+            onMonitorsPress={openMonitors}
+          />
+        </LinearGradient>
+      </View>
 
       {/* QR Scanner Modal */}
       <Modal visible={showQR} animationType="slide">
