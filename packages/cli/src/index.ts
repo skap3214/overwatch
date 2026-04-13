@@ -15,9 +15,20 @@ program
 
 program
   .command("setup")
-  .description("Configure Deepgram and terminal settings")
+  .description("Configure Pi auth, Deepgram, and terminal settings")
   .option("--deepgram-key <key>", "Deepgram API key")
-  .option("--configure-terminal <name>", "Auto-configure terminal (ghostty, kitty, alacritty, iterm2)")
+  .option(
+    "--configure-terminal <name>",
+    "Auto-configure terminal (ghostty, kitty, alacritty, iterm2, none)"
+  )
+  .option(
+    "--agent-provider <provider>",
+    "Run Pi provider login directly (for example: anthropic, openai-codex, github-copilot)"
+  )
+  .option(
+    "--agent-auth-file <path>",
+    "Import an existing ~/.pi/agent/auth.json file"
+  )
   .option("--non-interactive", "Skip all prompts, use provided flags only")
   .action(setupCommand);
 

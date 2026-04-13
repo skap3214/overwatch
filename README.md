@@ -2,42 +2,66 @@
 
 Voice-controlled orchestrator for tmux-hosted coding agent sessions. Control Claude Code, Codex, and other agents running on your Mac from your phone.
 
-## Prerequisites
+## Install First
 
-- macOS
-- [Homebrew](https://brew.sh) (`/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`)
-- Node.js 20+ (`brew install node`)
-- Git (`brew install git`)
-
-## Quick Setup
+The installer now handles the machine provisioning step for macOS:
+- installs Homebrew if needed
+- installs or upgrades `node`, `git`, and `tmux`
+- clones or updates Overwatch into `~/.overwatch/app`
+- installs the app dependencies locally
+- exposes `overwatch` on your PATH and installs `pi` the upstream-supported way via `npm install -g @mariozechner/pi-coding-agent`
 
 ```bash
 eval "$(curl -fsSL https://raw.githubusercontent.com/skap3214/overwatch/main/install.sh)"
 ```
 
-Then:
+Then configure only the user-specific pieces:
 
 ```bash
-overwatch setup    # configure API keys + terminal
-overwatch start    # start backend + show QR code
+overwatch setup
+overwatch start
+```
+
+## What `overwatch setup` does
+
+`overwatch setup` is now configuration-only. It helps you:
+- sign into a Pi provider or import an existing Pi auth file
+- save a Deepgram API key for STT + TTS
+- configure a supported terminal to auto-open tmux on new tabs
+
+The two user actions that can still require a human are:
+- choosing/configuring the terminal they actually use
+- completing the Pi OAuth/browser flow if no reusable auth already exists
+
+## Agent Setup
+
+If another coding agent is setting this up from the repo URL, point it at the repo-root onboarding doc:
+
+```text
+Follow AGENT_SETUP.md from https://github.com/skap3214/overwatch
+```
+
+That doc covers:
+- the install-first flow
+- the non-interactive `overwatch setup` flags
+- the least-interruptive Pi auth paths
+- exactly what human action is still required when auth cannot be imported
+
+## Quick Start
+
+```bash
+overwatch setup
+overwatch start
 ```
 
 Scan the QR code with the Overwatch iOS app (TestFlight).
-
-## Agent Setup (Claude Code, Codex, etc.)
-
-If you're using an AI coding agent to set this up, copy this prompt:
-
-```
-Install and configure Overwatch by following the instructions in AGENT_SETUP.md from https://github.com/skap3214/overwatch
-```
 
 ## Manual Setup
 
 ```bash
 git clone https://github.com/skap3214/overwatch
 cd overwatch
-npm install
+npm ci
 ```
 
 ### Configure
@@ -46,10 +70,14 @@ npm install
 npm run setup
 ```
 
-This will:
-- Check for pi-coding-agent OAuth (`~/.pi/agent/auth.json`)
-- Prompt for a Deepgram API key used for both STT and TTS
-- Configure your terminal (Ghostty, Kitty, iTerm2, or Alacritty) to auto-start tmux
+Useful non-interactive variants:
+
+```bash
+overwatch setup --non-interactive --deepgram-key <KEY>
+overwatch setup --non-interactive --deepgram-key <KEY> --configure-terminal ghostty
+overwatch setup --agent-provider anthropic
+overwatch setup --agent-auth-file /path/to/auth.json --non-interactive
+```
 
 ### Start
 
@@ -81,7 +109,7 @@ iPhone → Relay (Cloudflare Worker) → Mac
 
 | Service | Purpose | Get one at |
 |---|---|---|
-| Anthropic | Agent (via pi-coding-agent OAuth) | Auto-configured on first agent run |
+| Pi provider (Anthropic, OpenAI Codex, GitHub Copilot, etc.) | Agent access via Pi auth | Configured during `overwatch setup` |
 | Deepgram | Speech-to-text + text-to-speech | https://console.deepgram.com |
 
 ## Speech Stack

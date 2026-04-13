@@ -2,7 +2,7 @@
 
 Install and configure Overwatch — a voice-controlled orchestrator for tmux coding sessions, controllable from an iPhone.
 
-Prerequisites: macOS, Homebrew, Node.js 20+, Git. If any are missing, install them first.
+Assume the repo-root `install.sh` is the first step. It now provisions Homebrew, Node.js, Git, tmux, the repo checkout, the local app dependencies, and installs `pi` globally using the upstream-supported npm global install path. `overwatch setup` is configuration-only.
 
 ### Step 1: Install Overwatch
 
@@ -12,13 +12,24 @@ If `overwatch` is not found after install, run: `export PATH="$HOME/.overwatch/b
 
 ### Step 2: Configure the AI agent
 
-Check if `~/.pi/agent/auth.json` exists and is non-empty (not just `{}`). If it does, the agent is already configured — skip to Step 3.
+Check if `~/.pi/agent/auth.json` exists and is non-empty (not just `{}`). If it does, the Pi agent is already configured — skip to Step 3.
 
-If not, the user needs to authenticate with an AI provider. Run: `pi`
+Preferred paths, in order:
 
-This launches the pi-coding-agent. The user should type `/login`, select their provider (Anthropic, OpenAI, GitHub Copilot, etc.), and complete the OAuth flow in their browser. Once authenticated, they should type `/exit` to return.
+1. If the user already has a valid Pi auth file on another machine or from a prior install, import it:
+   `overwatch setup --agent-auth-file /path/to/auth.json --non-interactive`
+2. If the user can complete one browser login now, run:
+   `overwatch setup --agent-provider anthropic`
+   Replace `anthropic` with another provider id if the user wants a different Pi provider.
+3. If the direct setup flow fails, fall back to the raw Pi UI:
+   `pi`
+   Then have the user run `/login`, pick their provider, and complete the flow.
 
-Verify it worked: `cat ~/.pi/agent/auth.json` should show provider credentials.
+Important: there is no true silent OAuth path for the built-in Pi providers. If auth cannot be imported, the human still has to approve a browser login and sometimes paste a code or callback URL. Your job as the agent is to make that handoff explicit and brief.
+
+Verify success with:
+- `cat ~/.pi/agent/auth.json`
+- it should contain at least one provider entry with non-empty credentials
 
 ### Step 3: Get API keys
 
@@ -45,9 +56,10 @@ Terminal names: `ghostty`, `kitty`, `alacritty`, `iterm2` (lowercase).
 Check the setup:
 - `cat ~/.overwatch/config.json` — should have `deepgramApiKey`
 - `cat ~/.pi/agent/auth.json` — should have provider credentials (not empty `{}`)
+- terminal config should either already open tmux automatically, or the user intentionally chose to skip that step
 
 If both look good, tell the user:
 > Setup complete! Restart your terminal (new tabs will auto-start tmux sessions), then run `overwatch start`. It will show a QR code — scan it with the Overwatch iOS app (TestFlight).
 
 If `~/.pi/agent/auth.json` is missing or empty, tell the user:
-> Almost done! Run `pi`, type `/login`, pick your AI provider, and complete the login. Then run `overwatch start`.
+> Almost done! Pi auth still needs a human browser login. Run `overwatch setup --agent-provider anthropic` and complete the provider login, or run `pi` and use `/login`. Then run `overwatch start`.
