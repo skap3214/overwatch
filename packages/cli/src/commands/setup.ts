@@ -280,6 +280,155 @@ function detectTerminals(): TerminalInfo[] {
   ];
 }
 
+const TMUX_CONF = `# Overwatch tmux config — makes tmux invisible to users who didn't ask for it.
+# Written by \`overwatch setup\`. Safe to delete; regenerated on next setup run.
+# Users with their own ~/.tmux.conf still get their customizations — we source
+# it at the end so personal overrides always win.
+
+# ── server-wide responsiveness ──────────────────────────────────────────────
+
+# Instant Esc. Default 500ms mis-tokenizes Opt+key sequences and makes vim
+# feel laggy. 10ms is the oh-my-tmux compromise — still snappy, survives ssh.
+set -sg escape-time 10
+
+# Let FocusIn/Out reach apps inside tmux (nvim autoread, watchers, fzf).
+set -sg focus-events on
+
+# Extended keys (CSI-u). Enables Ctrl+Shift+<letter>, disambiguated Tab vs
+# Ctrl+I, Enter vs Ctrl+M — everything modern terminals can emit.
+set -s extended-keys on
+set -as terminal-features 'xterm*:extkeys'
+set -as terminal-features 'xterm-ghostty:extkeys'
+set -as terminal-features 'xterm-kitty:extkeys'
+
+# Larger repeat window so -r bindings don't cut off mid-tap.
+set -sg repeat-time 600
+
+# ── colors, clipboard, underlines ───────────────────────────────────────────
+
+# Modern 256-color TERM with italics + extended caps.
+set -g default-terminal "tmux-256color"
+
+# Truecolor passthrough. Without this, themes look washed out.
+set -as terminal-features ',xterm-256color:RGB'
+set -as terminal-features ',xterm-ghostty:RGB'
+set -as terminal-features ',xterm-kitty:RGB'
+set -as terminal-features ',alacritty:RGB'
+set -as terminal-features ',iTerm.app:RGB'
+set -as terminal-overrides ',xterm*:Tc'
+
+# OSC 52 clipboard: selections inside tmux land in the macOS pasteboard.
+# No pbcopy/xclip/reattach-to-user-namespace shim needed.
+set -s set-clipboard on
+set -as terminal-features ',xterm-256color:clipboard'
+set -as terminal-features ',xterm-ghostty:clipboard'
+set -as terminal-features ',xterm-kitty:clipboard'
+
+# Styled / colored underlines (nvim diagnostics, etc.)
+set -as terminal-features ',xterm-256color:usstyle'
+set -as terminal-features ',xterm-ghostty:usstyle'
+set -as terminal-features ',xterm-kitty:usstyle'
+
+# Let apps inside tmux do OSC passthrough (kitty graphics, iterm2 images).
+set -g allow-passthrough on
+
+# ── day-one ergonomics ──────────────────────────────────────────────────────
+
+# Mouse: scroll, click to focus pane, drag to select. Biggest "this is just
+# a terminal" win. Hold Option on macOS to bypass for native text selection.
+set -g mouse on
+
+# 100k scrollback — default 2000 gets blown away by one npm install.
+set -g history-limit 100000
+
+# Silence. A bare shell doesn't flash on background output; neither should tmux.
+set -g bell-action none
+set -g visual-bell off
+set -g visual-activity off
+set -g monitor-activity off
+set -g monitor-bell off
+
+# Let apps own the terminal title.
+set -g set-titles on
+set -g set-titles-string "#{pane_title}"
+set -g allow-rename on
+
+# Windows/panes start at 1, match the keyboard. Close gaps on exit.
+set -g base-index 1
+setw -g pane-base-index 1
+set -g renumber-windows on
+
+# Resize to the smallest *currently visible* client, not the smallest
+# attached — saner when multiple clients are in different sizes.
+setw -g aggressive-resize on
+
+# Emacs keys in the command prompt (prefix + :). Matches readline muscle memory.
+set -g status-keys emacs
+
+# Slightly longer message / pane-number display.
+set -g display-time 2000
+set -g display-panes-time 2000
+
+# ── macOS-style key passthrough ─────────────────────────────────────────────
+# Terminals send Home/End for Cmd+Left/Right; remap to readline start/end.
+bind -n Home send-key C-a
+bind -n End  send-key C-e
+
+# Opt+Backspace → delete word, Opt+Delete → kill word forward.
+bind -n M-BSpace send-key C-w
+bind -n M-DC     send-key M-d
+
+# Opt+Left/Right → jump by word (re-emit Meta escape sequences).
+bind -n M-Left  send-key M-b
+bind -n M-Right send-key M-f
+bind -n M-b     send-key M-b
+bind -n M-f     send-key M-f
+
+# Ctrl+L clears screen AND tmux scrollback — matches the muscle memory of
+# users who expect Cmd+K in macOS Terminal to wipe the buffer entirely.
+bind -n C-l send-keys C-l \\; run-shell "sleep 0.1" \\; clear-history
+
+# ── copy-mode: drag-to-copy, wheel scroll ───────────────────────────────────
+
+# Emacs motion in copy-mode (readline-compatible, no vi surprise).
+setw -g mode-keys emacs
+
+# Release mouse after drag → copy to clipboard (OSC 52) and exit copy-mode,
+# like macOS Terminal. Keeps selection visible until next click.
+bind -T copy-mode MouseDragEnd1Pane send -X copy-pipe-and-cancel
+bind -T copy-mode DoubleClick1Pane  send -X select-word \\; send -X copy-pipe-and-cancel
+bind -T copy-mode TripleClick1Pane  send -X select-line \\; send -X copy-pipe-and-cancel
+
+# Right-click / middle-click paste — matches Linux/macOS expectations.
+bind -n MouseDown2Pane paste-buffer -p
+
+# Esc cancels copy-mode (readline Esc already cancels prompts).
+bind -T copy-mode Escape send -X cancel
+
+# ── status bar: minimal, unobtrusive ────────────────────────────────────────
+
+set -g status on
+set -g status-interval 5
+set -g status-position bottom
+set -g status-left " #S "
+set -g status-left-length 30
+set -g status-right ""
+set -g status-right-length 0
+set -g status-style "bg=#333842,fg=#c5c8c6"
+set -g status-left-style "bg=#81a2be,fg=#282c34,bold"
+set -g window-status-format " #I:#W "
+set -g window-status-current-format " #I:#W "
+set -g window-status-current-style "bg=#282c34,fg=#ffffff,bold"
+set -g window-status-style "bg=#333842,fg=#666666"
+set -g pane-border-style "fg=#333333"
+set -g pane-active-border-style "fg=#81a2be"
+set -g message-style "bg=#282c34,fg=#f0c674"
+
+# ── user overrides ──────────────────────────────────────────────────────────
+# Anything in the user's personal tmux.conf wins over everything above.
+if-shell "[ -f ~/.tmux.conf ]" "source-file -q ~/.tmux.conf"
+`;
+
 const TMUX_SCRIPT = `#!/bin/bash
 # overwatch: auto-start tmux session on new terminal tab
 [ -n "\$TMUX" ] && exec "\${SHELL:-/bin/zsh}"
@@ -293,18 +442,31 @@ fi
 if ! command -v tmux &>/dev/null; then
   exec "\${SHELL:-/bin/zsh}"
 fi
+CONF="\$HOME/.overwatch/tmux.conf"
 n=0
 while tmux has-session -t "ow-\$n" 2>/dev/null; do
   n=$((n + 1))
 done
+# -f loads our conf when the tmux server first starts. If a server is
+# already running (pre-existing tmux), also source the conf explicitly
+# so its options apply to the new session. Both paths are idempotent.
+if [ -f "\$CONF" ]; then
+  if tmux info &>/dev/null; then
+    tmux source-file -q "\$CONF" 2>/dev/null || true
+    exec tmux new-session -s "ow-\$n"
+  fi
+  exec tmux -f "\$CONF" new-session -s "ow-\$n"
+fi
 exec tmux new-session -s "ow-\$n"
 `;
 
 function installTmuxScript(): string {
   const scriptPath = join(getConfigDir(), "tmux-session.sh");
+  const confPath = join(getConfigDir(), "tmux.conf");
   mkdirSync(getConfigDir(), { recursive: true });
   writeFileSync(scriptPath, TMUX_SCRIPT, "utf-8");
   chmodSync(scriptPath, 0o755);
+  writeFileSync(confPath, TMUX_CONF, "utf-8");
   return scriptPath;
 }
 
