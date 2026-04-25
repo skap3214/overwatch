@@ -5,6 +5,7 @@ import { setupCommand } from "./commands/setup.js";
 import { startCommand } from "./commands/start.js";
 import { statusCommand } from "./commands/status.js";
 import { sessionsCommand } from "./commands/sessions.js";
+import { buildGatewayCommand } from "./commands/gateway.js";
 
 const program = new Command();
 
@@ -35,7 +36,10 @@ program
 program
   .command("start")
   .description("Start backend, connect to relay, show QR code")
+  .option("--foreground", "Run in this terminal even when gateway auto-on is enabled")
   .action(startCommand);
+
+program.addCommand(buildGatewayCommand());
 
 program
   .command("status")

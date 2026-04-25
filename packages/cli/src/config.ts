@@ -9,18 +9,26 @@ export interface OverwatchConfig {
   deepgramApiKey?: string;
   relayUrl?: string;
   backendPort?: number;
+  gateway?: {
+    autoStart?: boolean;
+    stableRoom?: boolean;
+  };
 }
 
 const DEFAULTS: OverwatchConfig = {
   relayUrl: "https://overwatch-relay.soami.workers.dev",
   backendPort: 8787,
+  gateway: {
+    autoStart: false,
+    stableRoom: true,
+  },
 };
 
 export function loadConfig(): OverwatchConfig {
   if (!existsSync(CONFIG_PATH)) return { ...DEFAULTS };
   try {
     const stored = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
-    return { ...DEFAULTS, ...stored };
+    return { ...DEFAULTS, ...stored, gateway: { ...DEFAULTS.gateway, ...stored.gateway } };
   } catch {
     return { ...DEFAULTS };
   }

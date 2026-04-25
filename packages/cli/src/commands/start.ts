@@ -1,185 +1,33 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import { join } from "node:path";
-import { homedir } from "node:os";
-import { existsSync } from "node:fs";
 import chalk from "chalk";
-import qrcode from "qrcode-terminal";
 import { loadConfig } from "../config.js";
-import { RelayBridge } from "../relay-bridge.js";
+import { getRunningGatewayPid, readGatewayStatus } from "../gateway-state.js";
+import { printPairingDetails, runGateway } from "../gateway-runtime.js";
+import { startGatewayService } from "./gateway.js";
 
-interface RoomResponse {
-  room: string;
-  roomId: string;
-}
-
-function printPairingDetails(roomCode: string, qrData: string): void {
-  console.log("Scan this QR code with the Overwatch app:");
-  console.log("");
-  qrcode.generate(qrData, { small: true }, (code: string) => {
-    console.log(code);
-  });
-  console.log("");
-  console.log(chalk.dim("Or enter manually:"));
-  console.log(chalk.dim(`  Room: ${roomCode}`));
-  console.log("");
-}
-
-async function createRoom(relayUrl: string): Promise<RoomResponse> {
-  const res = await fetch(`${relayUrl}/api/room/create`, { method: "POST" });
-  if (!res.ok) throw new Error(`Failed to create room: ${res.status}`);
-  return (await res.json()) as RoomResponse;
-}
-
-function findAppRoot(): string {
-  // Check cwd first (dev), then installed location
-  if (existsSync(join(process.cwd(), "src/index.ts"))) return process.cwd();
-  if (existsSync(join(process.cwd(), "dist/index.js"))) return process.cwd();
-  const installed = join(homedir(), ".overwatch", "app");
-  if (existsSync(join(installed, "src/index.ts"))) return installed;
-  if (existsSync(join(installed, "dist/index.js"))) return installed;
-  throw new Error("Cannot find Overwatch backend. Try reinstalling: eval \"$(curl -fsSL https://raw.githubusercontent.com/skap3214/overwatch/main/install.sh)\"");
-}
-
-function startBackend(port: number, config: import("../config.js").OverwatchConfig): ChildProcess {
-  const appRoot = findAppRoot();
-  const possiblePaths = [
-    join(appRoot, "src/index.ts"),
-    join(appRoot, "dist/index.js"),
-  ];
-
-  const entryPoint = possiblePaths.find((p) => existsSync(p))!;
-
-  const child = spawn("npx", ["tsx", entryPoint], {
-    cwd: appRoot,
-    env: {
-      ...process.env,
-      PORT: String(port),
-      ...(config.deepgramApiKey && { DEEPGRAM_API_KEY: config.deepgramApiKey }),
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-
-  child.stdout?.on("data", (data: Buffer) => {
-    const line = data.toString().trim();
-    if (line) console.log(chalk.dim(`[backend] ${line}`));
-  });
-
-  child.stderr?.on("data", (data: Buffer) => {
-    const line = data.toString().trim();
-    if (line) console.log(chalk.dim(`[backend] ${line}`));
-  });
-
-  return child;
-}
-
-async function waitForBackend(port: number, timeoutMs = 15000): Promise<void> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const res = await fetch(`http://localhost:${port}/health`);
-      if (res.ok) return;
-    } catch {
-      // not ready yet
-    }
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  throw new Error("Backend failed to start within timeout");
-}
-
-export async function startCommand(): Promise<void> {
+export async function startCommand(options?: { foreground?: boolean }): Promise<void> {
   const config = loadConfig();
-  const port = config.backendPort ?? 8787;
-  const relayUrl = config.relayUrl ?? "https://overwatch-relay.soami.workers.dev";
+
+  if (config.gateway?.autoStart && !options?.foreground) {
+    startGatewayService();
+    const status = readGatewayStatus();
+    const pid = getRunningGatewayPid();
+    console.log("");
+    console.log(chalk.green("✓") + ` Overwatch gateway is running${pid ? ` (PID ${pid})` : ""}`);
+    if (status?.room && status.hostPublicKey) {
+      const qrData = JSON.stringify({
+        r: status.room,
+        k: status.hostPublicKey,
+        ...(config.deepgramApiKey && { d: config.deepgramApiKey }),
+      });
+      console.log("");
+      printPairingDetails(status.room, qrData);
+      console.log(chalk.dim("Use `overwatch gateway status` for live connection details."));
+    }
+    return;
+  }
 
   console.log("");
   console.log(chalk.bold("Starting Overwatch..."));
   console.log("");
-
-  // 1. Start backend
-  process.stdout.write(`  Backend:  `);
-  let backendProcess: ChildProcess;
-  try {
-    backendProcess = startBackend(port, config);
-    await waitForBackend(port);
-    console.log(chalk.green("✓") + ` running on localhost:${port}`);
-  } catch (err) {
-    console.log(chalk.red("✗") + ` ${err instanceof Error ? err.message : "failed"}`);
-    process.exit(1);
-  }
-
-  // 2. Connect to relay
-  process.stdout.write(`  Relay:    `);
-  let room: RoomResponse;
-  try {
-    room = await createRoom(relayUrl);
-    console.log(chalk.green("✓") + ` connected to relay`);
-  } catch (err) {
-    console.log(chalk.red("✗") + ` ${err instanceof Error ? err.message : "failed"}`);
-    backendProcess.kill();
-    process.exit(1);
-  }
-
-  console.log(`  Room:     ${chalk.bold(room.room)}`);
-  console.log("");
-
-  // 3. Start encrypted bridge
-  let showPairingDetails = () => {};
-  const bridge = new RelayBridge({
-    relayUrl,
-    roomCode: room.room,
-    roomId: room.roomId,
-    backendPort: port,
-    sttUrl: `http://localhost:${port}/api/v1/stt`,
-    onPhoneConnected: () => {
-      console.log(chalk.green("  ✓ Phone connected!") + chalk.dim(" (E2E encrypted)"));
-      console.log("");
-      console.log(chalk.dim("Overwatch is running. Press Ctrl+C to stop."));
-    },
-    onPhoneDisconnected: () => {
-      console.log(chalk.yellow("  Phone disconnected. Waiting for reconnect..."));
-    },
-    onReconnecting: (target) => {
-      console.log(chalk.yellow(`  ${target === "relay" ? "Relay" : "Backend"} connection lost, reconnecting...`));
-      if (target === "backend") {
-        console.log("");
-        showPairingDetails();
-      }
-    },
-    onReconnected: (target) => {
-      console.log(chalk.green(`  ✓ ${target === "relay" ? "Relay" : "Backend"} reconnected`));
-    },
-    onError: (err) => {
-      console.error(chalk.red(`  Error: ${err.message}`));
-    },
-  });
-
-  bridge.start();
-
-  // 4. Show QR code
-  // Short keys + omit relay URL (phone uses default) to shrink QR code
-  const qrData = JSON.stringify({
-    r: room.room,
-    k: bridge.publicKeyBase64,
-    ...(config.deepgramApiKey && { d: config.deepgramApiKey }),
-  });
-
-  showPairingDetails = () => printPairingDetails(room.room, qrData);
-
-  showPairingDetails();
-  console.log("Waiting for phone to connect...");
-
-  // Handle graceful shutdown
-  const cleanup = () => {
-    console.log("");
-    console.log(chalk.dim("Shutting down..."));
-    bridge.stop();
-    backendProcess.kill();
-    process.exit(0);
-  };
-
-  process.on("SIGINT", cleanup);
-  process.on("SIGTERM", cleanup);
-
-  // Keep process alive
-  await new Promise(() => {});
+  await runGateway({ foreground: true, printPairing: true });
 }

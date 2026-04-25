@@ -61,6 +61,7 @@ class RealtimeClient {
   // Heartbeat state
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private pongTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  private missedPongs = 0;
 
   // Reconnection state
   private reconnectAttempt = 0;
@@ -240,13 +241,18 @@ class RealtimeClient {
       if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
       // Send ping as raw text frame (NOT encrypted)
       this.socket.send(JSON.stringify({ type: "ping" }));
-      // Start per-ping 10s timeout
+      // Network handoffs can briefly stall the socket. Require multiple
+      // missed pongs before forcing a reconnect.
       if (this.pongTimeoutTimer) clearTimeout(this.pongTimeoutTimer);
       this.pongTimeoutTimer = setTimeout(() => {
-        console.log(`[realtime] pong timeout — closing socket`);
-        this.socket?.close(4001, "pong_timeout");
-      }, 10_000);
-    }, 15_000);
+        this.missedPongs += 1;
+        console.log(`[realtime] pong timeout ${this.missedPongs}/3`);
+        if (this.missedPongs >= 3) {
+          console.log(`[realtime] closing socket after missed pongs`);
+          this.socket?.close(4001, "pong_timeout");
+        }
+      }, 12_000);
+    }, 20_000);
   }
 
   private clearHeartbeat(): void {
@@ -274,6 +280,7 @@ class RealtimeClient {
       case "pong":
         // Heartbeat alive — clear timeout
         if (this.pongTimeoutTimer) { clearTimeout(this.pongTimeoutTimer); this.pongTimeoutTimer = null; }
+        this.missedPongs = 0;
         // Reset reconnect counter on first pong (proves relay round-trip)
         if (this.reconnectAttempt > 0) {
           this.reconnectAttempt = 0;
@@ -319,6 +326,7 @@ class RealtimeClient {
     socket.onopen = () => {
       if (this.socket !== socket) return;
       console.log(`[realtime] socket OPEN mode=${this._mode}`);
+      this.missedPongs = 0;
 
       if (this._mode === "relay" && this.keyPair) {
         // Send client.hello with public key (plaintext, for key exchange)

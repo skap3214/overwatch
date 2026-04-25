@@ -29,8 +29,10 @@ interface BridgeOptions {
   roomId: string;
   backendPort: number;
   sttUrl: string;
+  keyPair?: KeyPair;
   onPhoneConnected: () => void;
   onPhoneDisconnected: () => void;
+  onConnected?: (target: "relay" | "backend") => void;
   onReconnecting?: (target: "relay" | "backend") => void;
   onReconnected?: (target: "relay" | "backend") => void;
   onError: (err: Error) => void;
@@ -57,6 +59,7 @@ export class RelayBridge {
   // Heartbeat state
   private pingInterval: ReturnType<typeof setInterval> | null = null;
   private pongTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  private missedPongs = 0;
 
   // Readiness tracking
   private backendConnected = false;
@@ -64,7 +67,7 @@ export class RelayBridge {
 
   constructor(options: BridgeOptions) {
     this.options = options;
-    this.keyPair = generateKeyPair();
+    this.keyPair = options.keyPair ?? generateKeyPair();
   }
 
   get publicKeyBase64(): string {
@@ -101,8 +104,11 @@ export class RelayBridge {
 
     ws.on("open", () => {
       console.log(`[bridge] relay WebSocket OPEN`);
+      this.missedPongs = 0;
       if (this.relayReconnectAttempt > 0) {
         this.options.onReconnected?.("relay");
+      } else {
+        this.options.onConnected?.("relay");
       }
       // Don't reset attempt counter yet — wait for first pong
       this.startHeartbeat();
@@ -167,6 +173,8 @@ export class RelayBridge {
       if (this.backendReconnectAttempt > 0) {
         this.options.onReconnected?.("backend");
         this.backendReconnectAttempt = 0;
+      } else {
+        this.options.onConnected?.("backend");
       }
       // Send hello to backend
       ws.send(
@@ -231,13 +239,18 @@ export class RelayBridge {
     this.pingInterval = setInterval(() => {
       if (!this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return;
       this.relayWs.send(JSON.stringify({ type: "ping" }));
-      // Start per-ping 10s timeout
+      // Close only after multiple misses. Mobile and Cloudflare sockets can
+      // stall briefly during network switches without being truly dead.
       if (this.pongTimeoutTimer) clearTimeout(this.pongTimeoutTimer);
       this.pongTimeoutTimer = setTimeout(() => {
-        console.log(`[bridge] pong timeout — closing relay socket`);
-        this.relayWs?.close(4001, "pong_timeout");
-      }, 10_000);
-    }, 15_000);
+        this.missedPongs += 1;
+        console.log(`[bridge] pong timeout ${this.missedPongs}/3`);
+        if (this.missedPongs >= 3) {
+          console.log(`[bridge] closing relay socket after missed pongs`);
+          this.relayWs?.close(4001, "pong_timeout");
+        }
+      }, 12_000);
+    }, 20_000);
   }
 
   private clearHeartbeat(): void {
@@ -260,6 +273,7 @@ export class RelayBridge {
       case "pong":
         // Pong from relay — heartbeat alive
         if (this.pongTimeoutTimer) { clearTimeout(this.pongTimeoutTimer); this.pongTimeoutTimer = null; }
+        this.missedPongs = 0;
         // Reset reconnect counter on first pong (proves round-trip)
         if (this.relayReconnectAttempt > 0) {
           this.relayReconnectAttempt = 0;

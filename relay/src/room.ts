@@ -34,6 +34,7 @@ function tryParseControl(message: string): ControlFrame | null {
 export class Room implements DurableObject {
   private alarmScheduled = false;
   private hostPublicKey: string | null = null;
+  private lastBridgeStatus: string | null = null;
 
   constructor(
     private readonly state: DurableObjectState,
@@ -46,9 +47,18 @@ export class Room implements DurableObject {
     // Join info — returns host public key for manual code entry
     if (url.pathname.endsWith("/join")) {
       const allSockets = this.state.getWebSockets();
+      const hostPublicKey =
+        this.hostPublicKey ??
+        ((await this.state.storage.get("hostPublicKey")) as string | null);
+      const lastBridgeStatus =
+        this.lastBridgeStatus ??
+        ((await this.state.storage.get("lastBridgeStatus")) as string | null);
       return Response.json({
         peers: allSockets.length,
-        hostPublicKey: this.hostPublicKey,
+        hostPublicKey,
+        bridgeReady: lastBridgeStatus
+          ? tryParseControl(lastBridgeStatus)?.ready === true
+          : false,
       });
     }
 
@@ -62,7 +72,10 @@ export class Room implements DurableObject {
     // Store host's public key for manual code entry
     if (role === "host") {
       const hpk = url.searchParams.get("hostPublicKey");
-      if (hpk) this.hostPublicKey = hpk;
+      if (hpk) {
+        this.hostPublicKey = hpk;
+        await this.state.storage.put("hostPublicKey", hpk);
+      }
     }
 
     // Replace existing connection for this role
@@ -72,9 +85,19 @@ export class Room implements DurableObject {
     }
 
     const pair = new WebSocketPair();
-    const [clientWs, serverWs] = pair;
+    const clientWs = pair[0];
+    const serverWs = pair[1];
 
     this.state.acceptWebSocket(serverWs, [role]);
+
+    if (role === "client") {
+      const status =
+        this.lastBridgeStatus ??
+        ((await this.state.storage.get("lastBridgeStatus")) as string | null);
+      if (status) {
+        try { serverWs.send(status); } catch {}
+      }
+    }
 
     return new Response(null, { status: 101, webSocket: clientWs });
   }
@@ -105,7 +128,9 @@ export class Room implements DurableObject {
           return;
 
         case "bridge.status": {
-          // Forward from host to all clients (no caching)
+          // Cache readiness so reconnecting clients get immediate state.
+          this.lastBridgeStatus = message;
+          await this.state.storage.put("lastBridgeStatus", message);
           const clients = this.state.getWebSockets("client");
           for (const client of clients) {
             try { client.send(message); } catch {}
@@ -128,11 +153,11 @@ export class Room implements DurableObject {
     // Don't notify peer for "replaced" closes (same role reconnecting)
     if (reason === "replaced") return;
 
-    this.notifyPeerDisconnected(ws);
+    await this.notifyPeerDisconnected(ws);
   }
 
   async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
-    this.notifyPeerDisconnected(ws);
+    await this.notifyPeerDisconnected(ws);
   }
 
   async alarm(): Promise<void> {
@@ -170,10 +195,15 @@ export class Room implements DurableObject {
     }
   }
 
-  private notifyPeerDisconnected(ws: WebSocket): void {
+  private async notifyPeerDisconnected(ws: WebSocket): Promise<void> {
     const tags = this.state.getTags(ws);
     const role: Role = tags.includes("host") ? "host" : "client";
     const otherRole: Role = role === "host" ? "client" : "host";
+
+    if (role === "host") {
+      this.lastBridgeStatus = JSON.stringify({ type: "bridge.status", ready: false });
+      await this.state.storage.put("lastBridgeStatus", this.lastBridgeStatus);
+    }
 
     const others = this.state.getWebSockets(otherRole);
     const notification = JSON.stringify({ type: "peer.disconnected", role });

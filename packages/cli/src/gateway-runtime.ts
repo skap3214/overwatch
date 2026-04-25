@@ -1,0 +1,282 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import chalk from "chalk";
+import qrcode from "qrcode-terminal";
+import { RelayBridge } from "./relay-bridge.js";
+import { toBase64 } from "./crypto.js";
+import { loadConfig, type OverwatchConfig } from "./config.js";
+import {
+  ERROR_LOG_PATH,
+  GATEWAY_LOG_PATH,
+  LOG_DIR,
+  getRunningGatewayPid,
+  loadOrCreateHostIdentity,
+  loadOrCreatePairingRoom,
+  createEphemeralRoom,
+  removePidFile,
+  writeGatewayStatus,
+  writePidFile,
+  type GatewayStatus,
+} from "./gateway-state.js";
+
+export interface GatewayRunOptions {
+  replace?: boolean;
+  foreground?: boolean;
+  printPairing?: boolean;
+}
+
+export function printPairingDetails(roomCode: string, qrData: string): void {
+  console.log("Scan this QR code with the Overwatch app:");
+  console.log("");
+  qrcode.generate(qrData, { small: true }, (code: string) => {
+    console.log(code);
+  });
+  console.log("");
+  console.log(chalk.dim("Or enter manually:"));
+  console.log(chalk.dim(`  Room: ${roomCode}`));
+  console.log("");
+}
+
+function findAppRoot(): string {
+  let cursor = resolve(process.cwd());
+  for (;;) {
+    if (
+      existsSync(join(cursor, "src/index.ts")) &&
+      existsSync(join(cursor, "src/realtime/socket-server.ts"))
+    ) {
+      return cursor;
+    }
+    const parent = dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
+  if (
+    existsSync(join(process.cwd(), "dist/index.js")) &&
+    existsSync(join(process.cwd(), "dist/realtime/socket-server.js"))
+  ) {
+    return process.cwd();
+  }
+  const installed = join(homedir(), ".overwatch", "app");
+  if (existsSync(join(installed, "src/index.ts"))) return installed;
+  if (existsSync(join(installed, "dist/index.js"))) return installed;
+  throw new Error("Cannot find Overwatch backend. Try reinstalling: eval \"$(curl -fsSL https://raw.githubusercontent.com/skap3214/overwatch/main/install.sh)\"");
+}
+
+function logLine(path: string, line: string): void {
+  mkdirSync(LOG_DIR, { recursive: true });
+  appendFileSync(path, `${new Date().toISOString()} ${line}\n`, "utf-8");
+}
+
+function startBackend(
+  port: number,
+  config: OverwatchConfig,
+  foreground: boolean
+): ChildProcess {
+  const appRoot = findAppRoot();
+  const possiblePaths = [
+    join(appRoot, "src/index.ts"),
+    join(appRoot, "dist/index.js"),
+  ];
+  const entryPoint = possiblePaths.find((p) => existsSync(p))!;
+
+  const child = spawn("npx", ["tsx", entryPoint], {
+    cwd: appRoot,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      ...(config.deepgramApiKey && { DEEPGRAM_API_KEY: config.deepgramApiKey }),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  child.stdout?.on("data", (data: Buffer) => {
+    const text = data.toString().trim();
+    if (!text) return;
+    logLine(GATEWAY_LOG_PATH, `[backend] ${text}`);
+    if (foreground) console.log(chalk.dim(`[backend] ${text}`));
+  });
+
+  child.stderr?.on("data", (data: Buffer) => {
+    const text = data.toString().trim();
+    if (!text) return;
+    logLine(ERROR_LOG_PATH, `[backend] ${text}`);
+    if (foreground) console.log(chalk.dim(`[backend] ${text}`));
+  });
+
+  return child;
+}
+
+async function backendIsHealthy(port: number): Promise<boolean> {
+  try {
+    const res = await fetch(`http://localhost:${port}/health`);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForBackend(port: number, timeoutMs = 15000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (await backendIsHealthy(port)) return;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error("Backend failed to start within timeout");
+}
+
+function terminatePid(pid: number): void {
+  try { process.kill(pid, "SIGTERM"); } catch {}
+}
+
+async function replaceExistingGatewayIfNeeded(replace: boolean): Promise<void> {
+  const existingPid = getRunningGatewayPid();
+  if (!existingPid || existingPid === process.pid) return;
+  if (!replace) {
+    throw new Error(`Gateway already running (PID ${existingPid}). Use 'overwatch gateway restart' or 'overwatch gateway run --replace'.`);
+  }
+  terminatePid(existingPid);
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    if (!getRunningGatewayPid()) return;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  try { process.kill(existingPid, "SIGKILL"); } catch {}
+}
+
+export async function runGateway(options: GatewayRunOptions = {}): Promise<void> {
+  const foreground = options.foreground ?? false;
+  const config = loadConfig();
+  const port = config.backendPort ?? 8787;
+  const relayUrl = config.relayUrl ?? "https://overwatch-relay.soami.workers.dev";
+
+  await replaceExistingGatewayIfNeeded(options.replace ?? false);
+  writePidFile();
+
+  const startedAt = new Date().toISOString();
+  const room = config.gateway?.stableRoom === false
+    ? createEphemeralRoom()
+    : loadOrCreatePairingRoom();
+  const hostIdentity = loadOrCreateHostIdentity();
+  const hostPublicKey = toBase64(hostIdentity.publicKey);
+  let backendProcess: ChildProcess | null = null;
+
+  const status: GatewayStatus = {
+    pid: process.pid,
+    startedAt,
+    updatedAt: startedAt,
+    relayUrl,
+    room,
+    hostPublicKey,
+    backendPort: port,
+    backendConnected: false,
+    relayConnected: false,
+    phoneConnected: false,
+    lastEvent: "starting",
+  };
+  const updateStatus = (patch: Partial<GatewayStatus>) => {
+    Object.assign(status, patch);
+    writeGatewayStatus(status);
+  };
+  updateStatus({});
+
+  const log = (line: string) => {
+    logLine(GATEWAY_LOG_PATH, line);
+    if (foreground) console.log(line);
+  };
+
+  try {
+    if (await backendIsHealthy(port)) {
+      updateStatus({ backendConnected: true, lastEvent: "using existing backend" });
+      log(`[gateway] backend already healthy on localhost:${port}`);
+    } else {
+      backendProcess = startBackend(port, config, foreground);
+      await waitForBackend(port);
+      updateStatus({ backendConnected: true, lastEvent: "backend started" });
+      log(`[gateway] backend running on localhost:${port}`);
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "backend failed";
+    updateStatus({ lastError: message, lastEvent: "backend failed" });
+    removePidFile();
+    throw err;
+  }
+
+  const bridge = new RelayBridge({
+    relayUrl,
+    roomCode: room,
+    roomId: room,
+    backendPort: port,
+    sttUrl: `http://localhost:${port}/api/v1/stt`,
+    keyPair: hostIdentity,
+    onPhoneConnected: () => {
+      updateStatus({ phoneConnected: true, relayConnected: true, lastEvent: "phone connected" });
+      log("[gateway] phone connected");
+    },
+    onPhoneDisconnected: () => {
+      updateStatus({ phoneConnected: false, lastEvent: "phone disconnected" });
+      log("[gateway] phone disconnected; waiting for reconnect");
+    },
+    onConnected: (target) => {
+      updateStatus({
+        relayConnected: target === "relay" ? true : status.relayConnected,
+        backendConnected: target === "backend" ? true : status.backendConnected,
+        lastEvent: `${target} connected`,
+      });
+      log(`[gateway] ${target} connected`);
+    },
+    onReconnecting: (target) => {
+      updateStatus({
+        relayConnected: target === "relay" ? false : status.relayConnected,
+        backendConnected: target === "backend" ? false : status.backendConnected,
+        lastEvent: `${target} reconnecting`,
+      });
+      log(`[gateway] ${target} reconnecting`);
+    },
+    onReconnected: (target) => {
+      updateStatus({
+        relayConnected: target === "relay" ? true : status.relayConnected,
+        backendConnected: target === "backend" ? true : status.backendConnected,
+        lastEvent: `${target} reconnected`,
+      });
+      log(`[gateway] ${target} reconnected`);
+    },
+    onError: (err) => {
+      updateStatus({ lastError: err.message, lastEvent: "error" });
+      logLine(ERROR_LOG_PATH, `[gateway] ${err.message}`);
+    },
+  });
+  bridge.start();
+  updateStatus({ lastEvent: "relay bridge started" });
+
+  const qrData = JSON.stringify({
+    r: room,
+    k: hostPublicKey,
+    ...(config.deepgramApiKey && { d: config.deepgramApiKey }),
+  });
+
+  if (options.printPairing ?? foreground) {
+    printPairingDetails(room, qrData);
+    console.log("Waiting for phone to connect...");
+  }
+
+  const cleanup = () => {
+    updateStatus({ lastEvent: "stopping", relayConnected: false, phoneConnected: false });
+    bridge.stop();
+    backendProcess?.kill();
+    removePidFile();
+  };
+
+  process.once("SIGINT", () => {
+    cleanup();
+    process.exit(0);
+  });
+  process.once("SIGTERM", () => {
+    cleanup();
+    process.exit(0);
+  });
+  process.once("exit", cleanup);
+
+  await new Promise(() => {});
+}

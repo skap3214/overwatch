@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import chalk from "chalk";
 import { loadConfig } from "../config.js";
+import { getRunningGatewayPid, readGatewayStatus } from "../gateway-state.js";
 
 function getAgentConfigured(): boolean {
   const authPath = join(homedir(), ".pi", "agent", "auth.json");
@@ -67,6 +68,8 @@ export async function statusCommand(): Promise<void> {
   const port = config.backendPort ?? 8787;
   const agentConfigured = getAgentConfigured();
   const terminalConfigured = hasTmuxAutoStartConfigured();
+  const gatewayPid = getRunningGatewayPid();
+  const gatewayStatus = readGatewayStatus();
 
   let backendOk = false;
   try {
@@ -81,6 +84,14 @@ export async function statusCommand(): Promise<void> {
     `  Backend:  ${backendOk ? chalk.green("running") : chalk.red("not running")} (localhost:${port})`
   );
   console.log(`  Relay:    ${chalk.dim(config.relayUrl ?? "not configured")}`);
+  console.log(
+    `  Gateway:  ${gatewayPid ? chalk.green(`running (PID ${gatewayPid})`) : chalk.red("not running")}${config.gateway?.autoStart ? chalk.dim(" auto-on") : ""}`
+  );
+  if (gatewayStatus?.room) {
+    console.log(
+      `  Pairing:  room ${chalk.bold(gatewayStatus.room)} · phone ${gatewayStatus.phoneConnected ? chalk.green("connected") : chalk.dim("not connected")}`
+    );
+  }
   console.log(
     `  Agent:    ${agentConfigured ? chalk.green("configured") : chalk.red("not set")}`
   );
