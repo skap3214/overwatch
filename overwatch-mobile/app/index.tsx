@@ -25,8 +25,11 @@ import "../global.css";
 export default function App() {
   const colors = useColors();
   const { loadBackendURL, connectionStatus } = useConnectionStore();
-  const { sendText, sendVoice, cancel, stopAudio } = useOverwatchTurn();
+  const { sendText, sendVoice, stopAudio } = useOverwatchTurn();
   const { amplitude, startRecording, stopRecording } = useRecorder();
+  const hand = useThemeStore((s) => s.hand);
+  const turnState = useTurnStore((s) => s.turnState);
+  const recordingUI = turnState === "recording" || turnState === "preparing";
   useRealtimeConnection();
 
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -113,6 +116,21 @@ export default function App() {
     }
   }, [stopRecording, sendVoice]);
 
+  const handleCancelRecording = useCallback(async () => {
+    const state = useTurnStore.getState().turnState;
+    if (state !== "recording" && state !== "preparing") return;
+    if (stoppingRef.current) return;
+    stoppingRef.current = true;
+    try {
+      await stopRecording();
+    } catch (err) {
+      console.error("cancel stopRecording failed:", err);
+    } finally {
+      useTurnStore.getState().setTurnState("idle");
+      stoppingRef.current = false;
+    }
+  }, [stopRecording]);
+
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
   }
@@ -131,7 +149,7 @@ export default function App() {
 
             <View
               style={{
-                flexDirection: useThemeStore.getState().hand === "left" ? "row-reverse" : "row",
+                flexDirection: hand === "left" ? "row-reverse" : "row",
                 alignItems: "center",
                 paddingHorizontal: 28,
                 paddingTop: 6,
@@ -141,11 +159,13 @@ export default function App() {
               }}
             >
               <View style={{ flex: 1 }}>
-                <InputBar onSubmit={handleTextSubmit} />
+                {!recordingUI && <InputBar onSubmit={handleTextSubmit} />}
               </View>
               <PTTButton
+                hand={hand}
                 onStartRecording={handleStartRecording}
                 onStopRecording={handleStopRecording}
+                onCancelRecording={handleCancelRecording}
                 amplitude={amplitude}
               />
             </View>
