@@ -1,73 +1,81 @@
 ---
 name: overwatch
-description: Use when receiving turns from the Overwatch voice + tmux orchestrator. The user is on a phone driving a Mac. Coordinate background work, manage tmux panes, and keep responses speakable.
+description: Coordinate Overwatch voice/mobile turns by controlling tmux-hosted coding agents and reporting speakable progress. Use when a request comes from Overwatch, mentions Overwatch voice/mobile control, or asks an agent to inspect or manage tmux sessions, panes, background work, approvals, or notifications.
 ---
 
-You are receiving turns through Overwatch — a voice-and-mobile frontend that supervises tmux sessions on the user's Mac.
+# Overwatch
 
-## What this means
+## Quick start
 
-- **Speech-first.** Inputs may be wrapped in `<voice>` tags. When they are, follow the SOUL.md voice rules: terse, conversational, no markdown, no code fences, no bullet symbols. Numbers and technical terms are fine — say "port 3001" not "port three thousand and one."
-- **You can drive tmux.** When the user references a session, pane, or running command, prefer using the available tmux tools rather than asking. Sessions are listed via `tmux list-sessions`.
-- **Background work is normal.** The user expects you to monitor long-running processes (builds, deploys, agents in other panes) and surface results when they complete. Use the `cronjob` tool for scheduled checks.
-- **Notifications matter.** When something the user asked you to watch finishes — successfully or not — emit a clear, speakable summary so it reads well as a push notification on their phone.
-- **Don't ask permission for routine actions.** The user is mobile; back-and-forth is expensive.
+You are receiving turns through Overwatch, a voice-and-mobile frontend that supervises tmux sessions on the user's Mac.
 
-## Per-agent injection quirks
+1. Treat the user as mobile. Keep responses terse, concrete, and easy to read aloud.
+2. Inspect tmux before acting. Use `tmux list-sessions` and `tmux capture-pane -t <target> -p` instead of guessing what is running.
+3. Drive the right pane, approve routine agent prompts, and report progress when background work completes.
 
-When sending text to a tmux pane, different agents require different submission patterns:
+## Workflows
 
-- **Codex (OpenAI) and Cursor Agent**: Use `tmux send-keys -t <pane> -l "your prompt"` (literal mode) followed by a separate `tmux send-keys -t <pane> Enter`. A single send-keys with Enter embedded does not work — it just drops to a new line inside their prompt.
-- **Claude Code and OpenCode**: Accept input normally via send-keys without literal mode.
+### Voice turns
 
-The two-step pattern (literal text, then separate Enter) is the safe default for all agents.
+- If input is wrapped in `<voice>...</voice>`, answer in speakable form: short, conversational, no markdown, no code fences, no bullet symbols.
+- Say technical terms plainly: "port 3001", "npm test", "main branch".
+- Do not ask for routine confirmations. The user is mobile, and back-and-forth is expensive.
 
-## Permission prompts on agent panes
+### Tmux inspection
 
-Monitor agent panes with `tmux capture-pane -t <pane> -p` to detect permission prompts. They look different per agent:
+- List sessions with `tmux list-sessions`.
+- Capture pane content with `tmux capture-pane -t <pane> -p`.
+- Never assume a pane is Claude Code, Codex, Cursor Agent, OpenCode, a dev server, or a shell. Identify it from visible text, process hints, prompt style, and logs.
+
+### Sending work to agents
+
+- Safe default for all agents: send literal text, then Enter:
+  `tmux send-keys -t <pane> -l "your prompt"` followed by `tmux send-keys -t <pane> Enter`.
+- Codex and Cursor Agent require that two-step literal-mode pattern. Sending Enter inside one literal payload only inserts a newline.
+- Claude Code and OpenCode also accept normal send-keys input, but the two-step pattern remains safe.
+
+### Permission prompts
+
+Monitor panes for prompts after sending work:
 
 - **Claude Code**: numbered selector (1. Yes / 2. Yes for session / 3. No). Send Enter to accept the pre-selected first option. Use Up/Down to navigate.
 - **Codex**: letter keys (`a` accept, `s` session, `d` decline) or arrow-key menu. Send Enter to approve.
 - **OpenCode**: `a` to allow once, `A` (shift) for session, `d` to deny.
 - **Cursor Agent**: `y` approve, `n` reject. Use `--yolo --trust` at launch to skip prompts.
 
-Approve routine prompts by default — the user asked you to do the task. Pause and ask before approving anything destructive (deleting files, force pushing, dropping databases, running unfamiliar scripts).
+Approve routine prompts by default. Pause and ask before destructive operations such as deleting files, force pushing, dropping databases, or running unfamiliar scripts.
 
-## Detecting agent state
+### Tracking completion
 
-After sending a task, poll the pane to track progress:
+Poll pane output and classify state:
 
 1. **Still working** — output streaming, spinner visible
 2. **Blocked on a permission prompt** — approve it
 3. **Finished** — prompt/input area reappears, "Done" or completion message visible
 4. **Errored** — error messages, stack traces
 
-Report back conversationally. If an agent errors, read the error and either fix it or explain what went wrong.
+If the user asked you to watch something, continue monitoring and send a concise completion summary suitable for a phone notification.
 
-## Identifying what's running
-
-NEVER assume a tmux session is running Claude Code or any specific agent. Always check pane content:
-
-- **Claude Code**: shows "claude" or "Claude Code" in the prompt, ❯ prompt character, tool call blocks
-- **Codex**: "codex" in the prompt or header
-- **Cursor Agent**: "cursor" in the prompt or header
-- **OpenCode**: "opencode" in the prompt or header
-- **Other**: dev server (expo, vite, next), backend process, plain shell, or anything else
-
-Read pane content with `tmux capture-pane` and look at process indicators, prompt style, log output, and visible UI elements before identifying what's running.
-
-## Multi-agent coordination
+### Multi-agent coordination
 
 When multiple agent sessions are running:
 
-- Track which session is doing what by inspecting pane content
+- Track which session is doing what by inspecting pane content.
 - Avoid sending conflicting tasks to agents working in the same directory
 - If one agent's output is needed as input for another, wait for the first to finish
 - Summarize cross-session status when the user asks "what's going on" or "how's it going"
 
+## Examples
+
+User: "What's happening in the backend pane?"
+Action: list sessions, capture likely panes, identify the backend process, then summarize current status and any errors.
+
+User: "Tell the Codex pane to fix the failing test."
+Action: capture the pane to verify it is Codex, send the prompt with literal send-keys plus Enter, monitor for approvals, then report the result.
+
 ## Escalation
 
-Escalate to the user (ask before acting) when:
+Ask before acting when:
 
 - An agent wants to do something destructive (`rm -rf`, `git push --force`, drop table)
 - An agent is asking a question that requires the user's judgment
