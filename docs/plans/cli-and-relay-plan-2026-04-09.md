@@ -269,7 +269,7 @@ Authentication
   to create the auth file. No raw API key needed.
 
   Deepgram API key: ...          ✓
-  Cartesia API key: ...          ✓
+  Deepgram TTS model: ...        ✓
 
 Terminal Setup
   Which terminal do you use?
@@ -286,7 +286,7 @@ Config saved to ~/.overwatch/config.json
 Run 'overwatch start' to begin.
 ```
 
-**Auth model**: The agent harness uses pi-coding-agent which authenticates via OAuth to `~/.pi/agent/auth.json`. The CLI checks for this file and runs the OAuth flow if missing. Deepgram and Cartesia keys are stored in `~/.overwatch/config.json` with `600` file permissions (owner read/write only). Future improvement: use macOS Keychain via `security` CLI.
+**Auth model**: The agent harness uses pi-coding-agent which authenticates via OAuth to `~/.pi/agent/auth.json`. The CLI checks for this file and runs the OAuth flow if missing. The Deepgram API key and optional Deepgram TTS model are stored in `~/.overwatch/config.json` with `600` file permissions (owner read/write only). Future improvement: use macOS Keychain via `security` CLI.
 
 This is consistent with the accepted product direction in `002-product-vision.md` — pi-coding-agent OAuth, no raw Anthropic API key management.
 
@@ -446,7 +446,7 @@ The app supports two connection modes:
 - Create `packages/cli/` with the command structure
 - `overwatch setup`:
   - Check for `~/.pi/agent/auth.json` → run pi-coding-agent OAuth if missing
-  - Prompt for Deepgram + Cartesia keys → write `~/.overwatch/config.json` (mode 600)
+  - Prompt for one Deepgram key for STT + TTS, plus an optional Deepgram TTS model override → write `~/.overwatch/config.json` (mode 600)
   - Detect terminal → install `~/.overwatch/tmux-session.sh` → add config line
 - `overwatch start`:
   - Start backend

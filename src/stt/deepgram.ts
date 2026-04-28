@@ -3,16 +3,19 @@ import type { SttResult } from "../shared/events.js";
 
 interface DeepgramSttAdapterOptions {
   apiKey?: string;
+  model?: string;
   keyterms?: string[];
 }
 
 export class DeepgramSttAdapter implements SttAdapter {
   private static readonly DEFAULT_KEYTERMS = ["Claude", "Codex", "tmux"];
   private readonly apiKey?: string;
+  private readonly model: string;
   private readonly keyterms: string[];
 
   constructor(options: DeepgramSttAdapterOptions = {}) {
     this.apiKey = options.apiKey;
+    this.model = options.model ?? "nova-3";
     this.keyterms = options.keyterms ?? DeepgramSttAdapter.DEFAULT_KEYTERMS;
   }
 
@@ -22,7 +25,7 @@ export class DeepgramSttAdapter implements SttAdapter {
     }
 
     const url = new URL("https://api.deepgram.com/v1/listen");
-    url.searchParams.set("model", "nova-3");
+    url.searchParams.set("model", this.model);
     url.searchParams.set("punctuate", "true");
     url.searchParams.set("smart_format", "true");
     for (const keyterm of this.keyterms) {

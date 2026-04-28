@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "react-native-animations": {
+      "source": "pluginagentmarketplace/custom-plugin-react-native",
+      "sourceType": "github",
+      "computedHash": "3b336655ba72cc1593fb5124f2e02c19a4e19fe3aaa43d3ce245e719f1c8a33e"
+    },
+    "vercel-react-native-skills": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "computedHash": "41d24eafa7c3d82e270439808f7cfbc4d51aeb2d14f2809a2267c16275784d06"
+    }
+  }
+}

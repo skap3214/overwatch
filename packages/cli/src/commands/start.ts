@@ -7,7 +7,7 @@ import { startGatewayService } from "./gateway.js";
 export async function startCommand(options?: { foreground?: boolean }): Promise<void> {
   const config = loadConfig();
 
-  if (config.gateway?.autoStart && !options?.foreground) {
+  if (config.gateway?.enabled && !options?.foreground) {
     startGatewayService();
     const status = readGatewayStatus();
     const pid = getRunningGatewayPid();

@@ -9,6 +9,8 @@ export type Message = {
   role: MessageRole;
   text: string;
   timestamp: number;
+  /** Reasoning trace from a reasoning-capable harness (Hermes). Rendered, never spoken. */
+  reasoning?: string;
 };
 
 export type SSEEvent =
@@ -53,6 +55,57 @@ export type ScheduledMonitor = {
   nextRunAt: string | null;
   lastFiredAt: string | null;
   recurring: boolean;
+  // Hermes-source extensions (optional for back-compat)
+  enabled?: boolean;
+  state?: string;
+  lastStatus?: "ok" | "error" | null;
+  lastError?: string | null;
+  paused?: boolean;
+  repeat?: { times: number | null; completed: number } | null;
+  source?: "local" | "hermes";
+};
+
+export type ActiveSkill = {
+  name: string;
+  description: string;
+  category: string;
+  enabled: boolean;
+  version?: string;
+};
+
+export type HarnessCapabilities = {
+  hasNativeCron: boolean;
+  hasNativeSkills: boolean;
+  hasNativeMemory: boolean;
+  hasSessionContinuity: boolean;
+  emitsReasoning: boolean;
+  voiceConvention: "soul-md" | "instructions-prefix" | "none";
+};
+
+export type AgentProviderInfo = {
+  id: string;
+  name: string;
+  tagline: string;
+  description: string;
+  capabilities: HarnessCapabilities;
+  installed: boolean;
+  installInstruction?: string;
+};
+
+export type HarnessSnapshot = {
+  active: string;
+  providers: AgentProviderInfo[];
+  // Legacy fields, kept so older snapshots still typecheck:
+  provider: string;
+  capabilities: HarnessCapabilities;
+};
+
+export type JobRun = {
+  id: string;
+  jobId: string;
+  ranAt: string;
+  filename: string;
+  outputPath: string;
 };
 
 export type WsEnvelope<T = unknown> = {

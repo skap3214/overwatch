@@ -6,8 +6,13 @@ import { startCommand } from "./commands/start.js";
 import { statusCommand } from "./commands/status.js";
 import { sessionsCommand } from "./commands/sessions.js";
 import { buildGatewayCommand } from "./commands/gateway.js";
+import { buildAgentCommand } from "./commands/agent.js";
 
 const program = new Command();
+
+function collectValues(value: string, previous: string[] = []): string[] {
+  return previous.concat(value);
+}
 
 program
   .name("overwatch")
@@ -16,12 +21,20 @@ program
 
 program
   .command("setup")
-  .description("Configure Pi auth, Deepgram, and terminal settings")
+  .description("Configure Overwatch desired state")
+  .option("--agent <id>", "Agent harness (pi-coding-agent, claude-code-cli, hermes)")
   .option("--deepgram-key <key>", "Deepgram API key")
+  .option("--stt <provider>", "Speech-to-text provider (deepgram)")
+  .option("--tts <provider>", "Text-to-speech provider (deepgram)")
+  .option("--stt-model <model>", "Speech-to-text model")
+  .option("--tts-model <model>", "Text-to-speech model")
+  .option("--skills <mode>", "Install the Overwatch agent skill (on, off)")
   .option(
-    "--configure-terminal <name>",
-    "Auto-configure terminal (ghostty, kitty, alacritty, iterm2, none)"
+    "--terminal <name>",
+    "Configure terminal; repeatable or comma-separated (ghostty, kitty, alacritty, iterm2, cmux, none)",
+    collectValues
   )
+  .option("--gateway <mode>", "Gateway service mode (on, off)")
   .option(
     "--agent-provider <provider>",
     "Run Pi provider login directly (for example: anthropic, openai-codex, github-copilot)"
@@ -36,10 +49,11 @@ program
 program
   .command("start")
   .description("Start backend, connect to relay, show QR code")
-  .option("--foreground", "Run in this terminal even when gateway auto-on is enabled")
+  .option("--foreground", "Run in this terminal even when gateway is on")
   .action(startCommand);
 
 program.addCommand(buildGatewayCommand());
+program.addCommand(buildAgentCommand());
 
 program
   .command("status")

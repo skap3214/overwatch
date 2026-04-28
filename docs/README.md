@@ -8,7 +8,7 @@ Start here before extending Overwatch.
 - Primary orchestrator harness: pi-coding-agent (library, Anthropic API via OAuth)
 - Current orchestration support beyond speech: scheduler support, persistent memory under `~/.overwatch/memory`, realtime notifications, scheduled monitor snapshots over the WebSocket control plane, and a bidirectional control-plane slice
 - Current STT provider: Deepgram prerecorded transcription
-- Current TTS provider: Cartesia WebSocket streaming TTS
+- Current TTS provider: Deepgram Aura WebSocket streaming TTS
 - Current backend status: realtime WebSocket endpoint implemented, notification store and scheduler runner implemented, dedicated STT endpoint implemented, web frontend exists as dev fallback, iOS app is next
 - Current backend routes: `/health`, `/debug/harness`, `/debug/tts`, `/debug/stt`, `/api/v1/stt`, `/api/v1/ws`
 - Direction: native iOS app as primary client, tmux orchestration layer next, then distribution packaging
@@ -24,6 +24,9 @@ Start here before extending Overwatch.
 
 - [architecture/001-backend-architecture.md](architecture/001-backend-architecture.md)
 - [architecture/002-product-vision.md](architecture/002-product-vision.md)
+- [architecture/004-harness-pluggability.md](architecture/004-harness-pluggability.md) — `OrchestratorHarness` interface; reasoning-vs-TTS isolation invariant
+- [architecture/005-hermes-bridge.md](architecture/005-hermes-bridge.md) — Hermes Agent integration (cron, skills, sessions, voice)
+- [architecture/006-overwatch-hermes-plugin.md](architecture/006-overwatch-hermes-plugin.md) — Bidirectional Hermes plugin for tmux orchestration
 
 ## Notes For Future Agents
 

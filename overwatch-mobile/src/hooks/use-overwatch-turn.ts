@@ -5,6 +5,7 @@ import { useAudioPlayer } from "./use-audio-player";
 import { audioActiveRef, bumpGeneration } from "./use-realtime-connection";
 import { transcribeAudio } from "../services/api";
 import { realtimeClient } from "../services/realtime";
+import { useThemeStore } from "../stores/theme-store";
 
 export function useOverwatchTurn() {
   const { connectionStatus } = useConnectionStore();
@@ -36,7 +37,8 @@ export function useOverwatchTurn() {
       store.addUserMessage(text);
       store.setTurnState("processing");
       store.setAbortController(null);
-      if (!realtimeClient.startTextTurn(text)) {
+      const tts = useThemeStore.getState().ttsEnabled;
+      if (!realtimeClient.startTextTurn(text, { tts })) {
         store.handleError("Not connected — waiting for reconnection");
         return;
       }
@@ -69,7 +71,8 @@ export function useOverwatchTurn() {
           if (abortController.signal.aborted) return;
           store.addUserMessage(transcript);
           store.setAbortController(null);
-          if (!realtimeClient.startTextTurn(transcript)) {
+          const tts = useThemeStore.getState().ttsEnabled;
+          if (!realtimeClient.startTextTurn(transcript, { tts })) {
             store.handleError("Not connected — waiting for reconnection");
           }
         } catch (err) {

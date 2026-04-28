@@ -13,7 +13,7 @@ A React Native (Expo) iOS app that connects to the Overwatch backend over Tailsc
 ## Why React Native / Expo
 
 - The backend is TypeScript. The web frontend is JavaScript. Staying in the same language eliminates platform-context-switching friction.
-- We have a proven, shipped mobile app (YouLearn) with battle-tested native audio modules, SSE handling, Cartesia TTS integration, push-to-talk recording, and Zustand state management. We reuse these directly instead of building from scratch.
+- We have a proven, shipped mobile app (YouLearn) with battle-tested native audio modules, SSE handling, streaming TTS playback, push-to-talk recording, and Zustand state management. We reuse these directly instead of building from scratch, while targeting Deepgram for Overwatch's backend TTS.
 - Expo development builds handle native code, config plugins, and TestFlight distribution without raw Xcode project management.
 
 ## Security Model
@@ -28,7 +28,7 @@ The app stores the Overwatch backend URL (e.g., `http://100.x.x.x:8787`) in asyn
 iPhone → Tailscale (WireGuard) → Mac:8787 (Overwatch backend)
                                     ├── STT (Deepgram)
                                     ├── Agent (pi-coding-agent)
-                                    ├── TTS (Cartesia)
+                                    ├── TTS (Deepgram Aura)
                                     └── tmux control (future)
 ```
 

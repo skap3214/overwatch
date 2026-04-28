@@ -364,6 +364,7 @@ Current environment variables:
 
 - `PORT`
 - `DEEPGRAM_API_KEY`
+- `DEEPGRAM_STT_MODEL`
 - `DEEPGRAM_TTS_MODEL`
 
 Current Deepgram TTS voice choice:

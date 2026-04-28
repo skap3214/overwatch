@@ -85,7 +85,7 @@ export async function statusCommand(): Promise<void> {
   );
   console.log(`  Relay:    ${chalk.dim(config.relayUrl ?? "not configured")}`);
   console.log(
-    `  Gateway:  ${gatewayPid ? chalk.green(`running (PID ${gatewayPid})`) : chalk.red("not running")}${config.gateway?.autoStart ? chalk.dim(" auto-on") : ""}`
+    `  Gateway:  ${gatewayPid ? chalk.green(`running (PID ${gatewayPid})`) : chalk.red("not running")}${config.gateway?.enabled ? chalk.dim(" on") : chalk.dim(" off")}`
   );
   if (gatewayStatus?.room) {
     console.log(
@@ -96,6 +96,8 @@ export async function statusCommand(): Promise<void> {
     `  Agent:    ${agentConfigured ? chalk.green("configured") : chalk.red("not set")}`
   );
   console.log(`  Deepgram: ${config.deepgramApiKey ? chalk.green("configured") : chalk.red("not set")} (STT + TTS)`);
+  console.log(`  STT:      ${config.sttProvider ?? "deepgram"}${config.sttModel ? chalk.dim(` (${config.sttModel})`) : ""}`);
+  console.log(`  TTS:      ${config.ttsProvider ?? "deepgram"}${config.ttsModel ? chalk.dim(` (${config.ttsModel})`) : ""}`);
   console.log(
     `  Terminal: ${terminalConfigured ? chalk.green("configured") : chalk.red("not set")} (tmux auto-start)`
   );

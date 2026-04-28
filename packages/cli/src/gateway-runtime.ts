@@ -81,12 +81,26 @@ function startBackend(
   ];
   const entryPoint = possiblePaths.find((p) => existsSync(p))!;
 
+  const harnessEnv: Record<string, string> = {};
+  if (config.harness) {
+    harnessEnv.HARNESS_PROVIDER = config.harness;
+  }
+  if (config.harness === "hermes" && config.hermes) {
+    if (config.hermes.baseURL) harnessEnv.HERMES_BASE_URL = config.hermes.baseURL;
+    if (config.hermes.apiKey) harnessEnv.HERMES_API_KEY = config.hermes.apiKey;
+    if (config.hermes.sessionId) harnessEnv.HERMES_SESSION_ID = config.hermes.sessionId;
+    if (config.hermes.skillName) harnessEnv.HERMES_SKILL_NAME = config.hermes.skillName;
+  }
+
   const child = spawn("npx", ["tsx", entryPoint], {
     cwd: appRoot,
     env: {
       ...process.env,
       PORT: String(port),
       ...(config.deepgramApiKey && { DEEPGRAM_API_KEY: config.deepgramApiKey }),
+      ...(config.sttModel && { DEEPGRAM_STT_MODEL: config.sttModel }),
+      ...(config.ttsModel && { DEEPGRAM_TTS_MODEL: config.ttsModel }),
+      ...harnessEnv,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -134,7 +148,7 @@ async function replaceExistingGatewayIfNeeded(replace: boolean): Promise<void> {
   const existingPid = getRunningGatewayPid();
   if (!existingPid || existingPid === process.pid) return;
   if (!replace) {
-    throw new Error(`Gateway already running (PID ${existingPid}). Use 'overwatch gateway restart' or 'overwatch gateway run --replace'.`);
+    throw new Error(`Gateway already running (PID ${existingPid}). Use 'overwatch gateway restart'.`);
   }
   terminatePid(existingPid);
   const deadline = Date.now() + 10_000;

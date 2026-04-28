@@ -14,6 +14,7 @@ import { useRecorder } from "../src/hooks/use-audio-recorder";
 import { useColors } from "../src/theme";
 import { StatusBar as OverwatchStatusBar } from "../src/components/StatusBar";
 import { MonitorsDropdown } from "../src/components/MonitorsDropdown";
+import { NotificationsHistoryScreen } from "../src/components/NotificationsHistoryScreen";
 import { TranscriptView } from "../src/components/TranscriptView";
 import { InputBar } from "../src/components/InputBar";
 import { PTTButton } from "../src/components/PTTButton";
@@ -36,6 +37,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [showMonitors, setShowMonitors] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   useEffect(() => {
     const showSub = Keyboard.addListener("keyboardWillShow", () => setKeyboardVisible(true));
@@ -215,6 +217,7 @@ export default function App() {
             onSettingsPress={goToSettings}
             onNewChat={handleNewChat}
             onMonitorsPress={openMonitors}
+            onNotificationsPress={() => setShowNotifications(true)}
           />
         </LinearGradient>
       </View>
@@ -225,6 +228,11 @@ export default function App() {
       </Modal>
 
       <MonitorsDropdown visible={showMonitors} onClose={closeMonitors} />
+
+      <NotificationsHistoryScreen
+        visible={showNotifications}
+        onClose={() => setShowNotifications(false)}
+      />
 
       {/* Settings */}
       <Modal visible={showSettings} animationType="slide">

@@ -31,7 +31,7 @@ The app stores the Overwatch backend URL (e.g., `http://100.x.x.x:8787`) as a us
 iPhone → Tailscale (WireGuard) → Mac:8787 (Overwatch backend)
                                     ├── STT (Deepgram)
                                     ├── Agent (pi-coding-agent)
-                                    ├── TTS (Cartesia)
+                                    ├── TTS (Deepgram Aura)
                                     └── tmux control (future)
 ```
 
@@ -232,4 +232,4 @@ Minimal:
 2. **Latency** — the end-to-end chain (record → upload → STT → agent → TTS → stream back → play) will have noticeable latency. This is inherent to the architecture and acceptable for v1. Optimizations (streaming STT, faster agent models) are future work.
 3. **Tailscale reliability** — if Tailscale drops the connection mid-turn, the SSE stream breaks. The app should detect this via URLSession error handling and show a reconnection prompt, not hang silently.
 4. **AVAudioEngine PCM buffer scheduling** — scheduling many small buffers in rapid succession on AVAudioPlayerNode needs testing to confirm gapless playback without glitches or underruns.
-5. **TTS gaps during tool calls** — the Cartesia WebSocket may time out during long tool executions, causing TTS to only speak the pre-tool-call text. The backend handles this gracefully (text stream continues, TTS error is non-fatal), but the user will experience silence for the post-tool-call response. Acceptable for v1.
+5. **TTS gaps during tool calls** — the Deepgram TTS stream may stall or end up waiting on a final flush during long tool executions, causing TTS to only speak the pre-tool-call text. The backend handles this gracefully (text stream continues, TTS error is non-fatal), but the user may still experience silence for the post-tool-call response. Acceptable for v1.

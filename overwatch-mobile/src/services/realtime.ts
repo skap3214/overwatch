@@ -190,8 +190,8 @@ class RealtimeClient {
     return this.send("turn.cancel", {});
   }
 
-  startTextTurn(text: string): boolean {
-    return this.send("turn.start", { text });
+  startTextTurn(text: string, options?: { tts?: boolean }): boolean {
+    return this.send("turn.start", { text, tts: options?.tts ?? true });
   }
 
   sendVoiceAudio(base64Audio: string, mimeType: string): boolean {
@@ -200,6 +200,10 @@ class RealtimeClient {
 
   acknowledgeNotification(notificationId: string): boolean {
     return this.send("notification.ack", { notificationId });
+  }
+
+  updateSettings(settings: { tts: boolean }): boolean {
+    return this.send("settings.update", settings);
   }
 
   // ── Status computation ──────────────────────────────────────────

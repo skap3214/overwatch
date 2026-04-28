@@ -24,10 +24,13 @@ overwatch start
 
 ## What `overwatch setup` does
 
-`overwatch setup` is now configuration-only. It helps you:
-- sign into a Pi provider or import an existing Pi auth file
-- save a Deepgram API key for STT + TTS
-- configure a supported terminal to auto-open tmux on new tabs
+`overwatch setup` owns the user-specific setup after the machine-level installer runs. It helps you:
+- choose the active agent harness
+- install the bundled Overwatch skill from `.agents/skills/overwatch` with `npx skills@latest add`
+- sign into a Pi provider or import an existing Pi auth file when using `pi-coding-agent`
+- save Deepgram STT/TTS credentials and model choices
+- configure one or more supported terminals to auto-open tmux on new tabs
+- turn the background gateway on or off
 
 The two user actions that can still require a human are:
 - choosing/configuring the terminal they actually use
@@ -74,9 +77,14 @@ Useful non-interactive variants:
 
 ```bash
 overwatch setup --non-interactive --deepgram-key <KEY>
-overwatch setup --non-interactive --deepgram-key <KEY> --configure-terminal ghostty
+overwatch setup --non-interactive --deepgram-key <KEY> --terminal ghostty
+overwatch setup --terminal ghostty --terminal kitty
+overwatch setup --agent hermes --gateway on
 overwatch setup --agent-provider anthropic
 overwatch setup --agent-auth-file /path/to/auth.json --non-interactive
+overwatch setup --stt deepgram --tts deepgram --stt-model nova-3 --tts-model aura-2-aries-en
+overwatch setup --skills off
+npx skills@latest add skap3214/overwatch/.agents/skills/overwatch --global --all --copy
 ```
 
 ### Start
@@ -92,6 +100,17 @@ This starts the backend, connects to the relay, and shows a QR code. Scan it wit
 ```bash
 npm run overwatch:status     # connection + config status
 npm run overwatch:sessions   # list tmux sessions
+```
+
+### CLI Schema
+
+```bash
+overwatch setup [--agent <id>] [--skills on|off] [--terminal <name>] [--gateway on|off]
+overwatch start
+overwatch status
+overwatch gateway start|stop|restart|status|logs
+overwatch agent list|status|set <id>
+overwatch sessions
 ```
 
 ## Architecture

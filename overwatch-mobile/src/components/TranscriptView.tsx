@@ -5,6 +5,7 @@ import { useColors } from "../theme";
 import { useScrollToBottom } from "../hooks/use-scroll-to-bottom";
 import { ScrollToBottomButton } from "./ScrollToBottomButton";
 import { ChevronRight } from "lucide-react-native";
+import { ReasoningBlock } from "./ReasoningBlock";
 import type { Message } from "../types";
 
 function MessageBubble({ message, colors, isLast, anchorMinHeight }: {
@@ -34,33 +35,59 @@ function MessageBubble({ message, colors, isLast, anchorMinHeight }: {
     }
 
     const isUser = message.role === "user";
+    const hasReasoning = !isUser && !!message.reasoning;
+    const hasFinalText = !!message.text;
+
     return (
       <View style={{ paddingVertical: 6, paddingHorizontal: 16, alignItems: isUser ? "flex-end" : "flex-start" }}>
-        <View
-          style={
-            isUser
-              ? {
-                  backgroundColor: colors.surfaceAlt,
-                  paddingHorizontal: 14,
-                  paddingVertical: 10,
-                  borderRadius: 18,
-                  borderBottomRightRadius: 4,
-                  maxWidth: "85%",
-                }
-              : {
-                  backgroundColor: colors.surface,
-                  paddingHorizontal: 14,
-                  paddingVertical: 10,
-                  borderRadius: 18,
-                  borderBottomLeftRadius: 4,
-                  maxWidth: "90%",
-                }
-          }
-        >
-          <Text style={{ color: colors.text, fontSize: 14, fontFamily: "IosevkaAile-Regular", lineHeight: 21 }} selectable>
-            {message.text}
-          </Text>
-        </View>
+        {/* Reasoning rendered before/above the assistant bubble. While streaming
+            (no final text yet), shows "thinking…". Once message.text arrives,
+            collapses into a "Show thinking" caret. */}
+        {hasReasoning && !hasFinalText && (
+          <View style={{ alignSelf: "stretch" }}>
+            <ReasoningBlock
+              reasoning={message.reasoning!}
+              hasFinalText={false}
+              colors={colors}
+            />
+          </View>
+        )}
+        {hasFinalText && (
+          <View
+            style={
+              isUser
+                ? {
+                    backgroundColor: colors.surfaceAlt,
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                    borderRadius: 18,
+                    borderBottomRightRadius: 4,
+                    maxWidth: "85%",
+                  }
+                : {
+                    backgroundColor: colors.surface,
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                    borderRadius: 18,
+                    borderBottomLeftRadius: 4,
+                    maxWidth: "90%",
+                  }
+            }
+          >
+            <Text style={{ color: colors.text, fontSize: 14, fontFamily: "IosevkaAile-Regular", lineHeight: 21 }} selectable>
+              {message.text}
+            </Text>
+          </View>
+        )}
+        {hasReasoning && hasFinalText && (
+          <View style={{ alignSelf: "stretch" }}>
+            <ReasoningBlock
+              reasoning={message.reasoning!}
+              hasFinalText={true}
+              colors={colors}
+            />
+          </View>
+        )}
       </View>
     );
   })();

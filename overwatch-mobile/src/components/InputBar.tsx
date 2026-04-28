@@ -37,8 +37,6 @@ export function InputBar({ onSubmit }: Props) {
       }}
       fallbackStyle={{
         backgroundColor: colors.surface,
-        borderWidth: 1,
-        borderColor: colors.border,
       }}
       tintColor={colors.surface}
     >

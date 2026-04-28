@@ -13,6 +13,7 @@ type BaseJob = {
 
 type ForegroundJob = BaseJob & {
   kind: "foreground";
+  tts: boolean;
   send: ForegroundSend;
   abortSignal?: AbortSignal;
   resolve: () => void;
@@ -63,11 +64,20 @@ export class TurnCoordinator {
   private currentJob: QueuedJob | null = null;
   private processing = false;
   private readonly emitter = new CoordinatorEmitter();
+  private _ttsEnabled = true;
 
   constructor(
     private readonly harness: OrchestratorHarness,
     private readonly tts: TtsAdapter
   ) {}
+
+  get ttsEnabled(): boolean {
+    return this._ttsEnabled;
+  }
+
+  set ttsEnabled(enabled: boolean) {
+    this._ttsEnabled = enabled;
+  }
 
   private currentAbortController: AbortController | null = null;
 
@@ -79,6 +89,7 @@ export class TurnCoordinator {
 
   async runForegroundTurn(params: {
     prompt: string;
+    tts?: boolean;
     send: ForegroundSend;
     abortSignal?: AbortSignal;
   }): Promise<void> {
@@ -89,6 +100,7 @@ export class TurnCoordinator {
       const job: ForegroundJob = {
         id: `turn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         kind: "foreground",
+        tts: params.tts !== false,
         prompt: params.prompt,
         send: params.send,
         abortSignal: params.abortSignal,
@@ -199,6 +211,13 @@ export class TurnCoordinator {
           if (event.type === "text_delta") {
             job.send("turn.text_delta", { turnId: job.id, text: event.text });
             textQueue.push(event.text);
+          } else if (event.type === "reasoning_delta") {
+            // CRITICAL: reasoning is rendered in the UI but MUST NOT be spoken.
+            // Only forward to the socket; never push to textQueue (which feeds TTS).
+            job.send("turn.reasoning_delta", {
+              turnId: job.id,
+              text: event.text,
+            });
           } else if (event.type === "assistant_message") {
             job.send("turn.assistant_message", {
               turnId: job.id,
@@ -215,32 +234,34 @@ export class TurnCoordinator {
       }
     })();
 
-    const ttsPromise = (async () => {
-      try {
-        for await (const event of this.tts.synthesize({
-          textChunks: textQueue,
-          abortSignal,
-        })) {
-          if (event.type === "audio_chunk") {
-            const base64 = Buffer.from(event.data).toString("base64");
-            job.send("turn.audio_chunk", {
-              turnId: job.id,
-              base64,
-              mimeType: event.mimeType,
-            });
-          } else if (event.type === "error") {
-            job.send("turn.tts_error", {
-              turnId: job.id,
-              message: event.message,
-            });
+    const ttsPromise = job.tts
+      ? (async () => {
+          try {
+            for await (const event of this.tts.synthesize({
+              textChunks: textQueue,
+              abortSignal,
+            })) {
+              if (event.type === "audio_chunk") {
+                const base64 = Buffer.from(event.data).toString("base64");
+                job.send("turn.audio_chunk", {
+                  turnId: job.id,
+                  base64,
+                  mimeType: event.mimeType,
+                });
+              } else if (event.type === "error") {
+                job.send("turn.tts_error", {
+                  turnId: job.id,
+                  message: event.message,
+                });
+              }
+            }
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : "TTS error";
+            job.send("turn.tts_error", { turnId: job.id, message });
           }
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "TTS error";
-        job.send("turn.tts_error", { turnId: job.id, message });
-      }
-    })();
+        })()
+      : Promise.resolve();
 
     // Race between normal completion and abort — if aborted, move on
     // immediately so the next turn can start. The harness may still be
@@ -295,6 +316,12 @@ export class TurnCoordinator {
               turnId: job.id,
               text: event.text,
             });
+          } else if (event.type === "reasoning_delta") {
+            // Reasoning is rendered in the UI but never fed to TTS.
+            this.emitter.emit("event", "background.turn_reasoning_delta", {
+              turnId: job.id,
+              text: event.text,
+            });
           } else if (event.type === "assistant_message" && !text) {
             text = event.text;
           } else if (event.type === "tool_call") {
@@ -314,33 +341,35 @@ export class TurnCoordinator {
       }
     })();
 
-    const ttsPromise = (async () => {
-      try {
-        for await (const event of this.tts.synthesize({
-          textChunks: textQueue,
-        })) {
-          if (event.type === "audio_chunk") {
-            this.emitter.emit("event", "background.turn_audio_chunk", {
-              turnId: job.id,
-              base64: Buffer.from(event.data).toString("base64"),
-              mimeType: event.mimeType,
-            });
-          } else if (event.type === "error") {
+    const ttsPromise = this._ttsEnabled
+      ? (async () => {
+          try {
+            for await (const event of this.tts.synthesize({
+              textChunks: textQueue,
+            })) {
+              if (event.type === "audio_chunk") {
+                this.emitter.emit("event", "background.turn_audio_chunk", {
+                  turnId: job.id,
+                  base64: Buffer.from(event.data).toString("base64"),
+                  mimeType: event.mimeType,
+                });
+              } else if (event.type === "error") {
+                this.emitter.emit("event", "background.turn_tts_error", {
+                  turnId: job.id,
+                  message: event.message,
+                });
+              }
+            }
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : "Background TTS error";
             this.emitter.emit("event", "background.turn_tts_error", {
               turnId: job.id,
-              message: event.message,
+              message,
             });
           }
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Background TTS error";
-        this.emitter.emit("event", "background.turn_tts_error", {
-          turnId: job.id,
-          message,
-        });
-      }
-    })();
+        })()
+      : Promise.resolve();
 
     await Promise.allSettled([harnessPromise, ttsPromise]);
 

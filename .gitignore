@@ -5,6 +5,8 @@ dist/
 logs/
 state/
 .claude/
+__pycache__/
+*.pyc
 
 # Mobile
 overwatch-mobile/node_modules/

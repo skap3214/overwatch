@@ -26,6 +26,7 @@ type TurnStore = {
   setTurnState: (state: TurnState) => void;
   addUserMessage: (text: string) => void;
   handleTextDelta: (text: string) => void;
+  handleReasoningDelta: (text: string) => void;
   handleToolCall: (name: string) => void;
   handleDone: () => void;
   handleError: (message: string) => void;
@@ -122,6 +123,32 @@ export const useTurnStore = create<TurnStore>((set, get) => ({
         messages: messages.map((m) => (m.id === pendingMessageId ? { ...m, text: newText } : m)),
       });
     }
+  },
+
+  handleReasoningDelta: (text) => {
+    // Reasoning streams BEFORE the assistant's final text. Attach to a pending
+    // assistant message; if none exists yet, pre-create one with empty body
+    // so the ReasoningBlock UI has something to anchor to.
+    const { pendingMessageId, messages } = get();
+    if (!pendingMessageId || !messages.some((m) => m.id === pendingMessageId)) {
+      const id = makeId();
+      const msg: Message = {
+        id,
+        role: "assistant",
+        text: "",
+        timestamp: Date.now(),
+        reasoning: text,
+      };
+      set({ messages: [...messages, msg], pendingMessageId: id, pendingText: "" });
+      return;
+    }
+    set({
+      messages: messages.map((m) =>
+        m.id === pendingMessageId
+          ? { ...m, reasoning: (m.reasoning ?? "") + text }
+          : m,
+      ),
+    });
   },
 
   handleToolCall: (name) => {

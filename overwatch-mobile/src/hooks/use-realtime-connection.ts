@@ -4,8 +4,18 @@ import { useConnectionStore } from "../stores/connection-store";
 import { useTurnStore } from "../stores/turn-store";
 import { useNotificationsStore } from "../stores/notifications-store";
 import { useMonitorsStore } from "../stores/monitors-store";
+import { useSkillsStore } from "../stores/skills-store";
+import { useHarnessStore } from "../stores/harness-store";
 import { useAudioPlayer } from "./use-audio-player";
-import type { NotificationEvent, ScheduledMonitor, WsEnvelope } from "../types";
+import { useThemeStore } from "../stores/theme-store";
+import type {
+  ActiveSkill,
+  AgentProviderInfo,
+  HarnessCapabilities,
+  NotificationEvent,
+  ScheduledMonitor,
+  WsEnvelope,
+} from "../types";
 
 // Shared ref so other hooks can reset audio state on cancel/interrupt
 export const audioActiveRef = { current: false };
@@ -40,6 +50,9 @@ export function useRealtimeConnection() {
     realtimeClient.setHandlers({
       onStatus: (status) => {
         setConnectionStatus(status);
+        if (status === "connected") {
+          realtimeClient.updateSettings({ tts: useThemeStore.getState().ttsEnabled });
+        }
       },
       onEnvelope: (envelope: WsEnvelope) => {
         switch (envelope.type) {
@@ -67,6 +80,25 @@ export function useRealtimeConnection() {
             useMonitorsStore.getState().replaceMonitors(monitors);
             break;
           }
+          case "skill.snapshot":
+          case "skill.updated": {
+            const skills = (envelope.payload as { skills: ActiveSkill[] }).skills;
+            useSkillsStore.getState().replaceSkills(skills);
+            break;
+          }
+          case "harness.snapshot": {
+            const payload = envelope.payload as {
+              active?: string;
+              provider?: string;
+              capabilities: HarnessCapabilities;
+              providers?: AgentProviderInfo[];
+            };
+            const active = payload.active ?? payload.provider ?? "pi-coding-agent";
+            useHarnessStore
+              .getState()
+              .setSnapshot(active, payload.capabilities, payload.providers);
+            break;
+          }
 
           // ── Foreground turn events ───────────────────────────────
           case "turn.started":
@@ -80,6 +112,12 @@ export function useRealtimeConnection() {
           case "turn.text_delta":
             if (isFgStale()) break;
             useTurnStore.getState().handleTextDelta(
+              (envelope.payload as { text: string }).text
+            );
+            break;
+          case "turn.reasoning_delta":
+            if (isFgStale()) break;
+            useTurnStore.getState().handleReasoningDelta(
               (envelope.payload as { text: string }).text
             );
             break;
@@ -129,7 +167,8 @@ export function useRealtimeConnection() {
             if (isFgStale()) break;
             const text = (envelope.payload as { text: string }).text;
             useTurnStore.getState().addUserMessage(text);
-            realtimeClient.startTextTurn(text);
+            const tts = useThemeStore.getState().ttsEnabled;
+            realtimeClient.startTextTurn(text, { tts });
             break;
           }
           case "voice.error": {
@@ -162,6 +201,11 @@ export function useRealtimeConnection() {
             break;
           case "background.turn_text_delta":
             useTurnStore.getState().handleTextDelta(
+              (envelope.payload as { text: string }).text
+            );
+            break;
+          case "background.turn_reasoning_delta":
+            useTurnStore.getState().handleReasoningDelta(
               (envelope.payload as { text: string }).text
             );
             break;

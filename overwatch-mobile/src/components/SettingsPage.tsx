@@ -1,11 +1,12 @@
 import React, { useState, useCallback } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, Keyboard, Modal, Alert } from "react-native";
-import { Sun, Moon, Monitor, ChevronLeft, Hand, QrCode, Unplug } from "lucide-react-native";
+import { Sun, Moon, Monitor, ChevronLeft, Hand, QrCode, Unplug, Volume2, VolumeOff } from "lucide-react-native";
 import { GlassSurface } from "./GlassSurface";
 import { useConnectionStore } from "../stores/connection-store";
 import { useThemeStore, type ThemeMode } from "../stores/theme-store";
 import { useColors } from "../theme";
 import { QRScanner } from "./QRScanner";
+import { HarnessInfoSection } from "./HarnessInfoSection";
 import { realtimeClient, type RelayConfig } from "../services/realtime";
 import type { ConnectionStatus } from "../types";
 
@@ -33,7 +34,7 @@ const AMBER = "#f59e0b";
 export function SettingsPage({ onClose }: Props) {
   const colors = useColors();
   const { connectionStatus } = useConnectionStore();
-  const { mode: themeMode, setMode: setThemeMode, hand, setHand } = useThemeStore();
+  const { mode: themeMode, setMode: setThemeMode, hand, setHand, ttsEnabled, setTTSEnabled } = useThemeStore();
   const [showQR, setShowQR] = useState(false);
   const [codeInput, setCodeInput] = useState("");
   const [joining, setJoining] = useState(false);
@@ -201,6 +202,9 @@ export function SettingsPage({ onClose }: Props) {
         )}
       </View>
 
+      {/* Agent (harness info + capabilities) */}
+      <HarnessInfoSection />
+
       {/* Theme */}
       <View style={{ gap: 10, backgroundColor: colors.surface, borderRadius: 16, padding: 16 }}>
         <Text style={{ color: colors.textDim, fontSize: 12, fontFamily: "IosevkaAile-Regular", textTransform: "uppercase", letterSpacing: 1 }}>
@@ -257,6 +261,48 @@ export function SettingsPage({ onClose }: Props) {
               <Pressable
                 key={side}
                 onPress={() => setHand(side)}
+                style={{ flex: 1 }}
+              >
+                {selected ? (
+                  <GlassSurface
+                    style={{ alignItems: "center", justifyContent: "center", paddingVertical: 12, borderRadius: 8, flexDirection: "row", gap: 6 }}
+                    fallbackStyle={{ backgroundColor: colors.surfaceAlt }}
+                    tintColor={colors.surfaceAlt}
+                  >
+                    {inner}
+                  </GlassSurface>
+                ) : (
+                  <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 12, borderRadius: 8, flexDirection: "row", gap: 6 }}>
+                    {inner}
+                  </View>
+                )}
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+      {/* Voice response */}
+      <View style={{ gap: 10, backgroundColor: colors.surface, borderRadius: 16, padding: 16 }}>
+        <Text style={{ color: colors.textDim, fontSize: 12, fontFamily: "IosevkaAile-Regular", textTransform: "uppercase", letterSpacing: 1 }}>
+          Voice response
+        </Text>
+        <View style={{ flexDirection: "row", backgroundColor: colors.bg, borderRadius: 12, padding: 4 }}>
+          {([true, false] as const).map((enabled) => {
+            const selected = ttsEnabled === enabled;
+            const Icon = enabled ? Volume2 : VolumeOff;
+            const label = enabled ? "On" : "Off";
+            const inner = (
+              <>
+                <Icon size={16} color={selected ? colors.text : colors.textFaint} />
+                <Text style={{ color: selected ? colors.text : colors.textFaint, fontSize: 13, fontFamily: "IosevkaAile-Regular" }}>
+                  {label}
+                </Text>
+              </>
+            );
+            return (
+              <Pressable
+                key={label}
+                onPress={() => setTTSEnabled(enabled)}
                 style={{ flex: 1 }}
               >
                 {selected ? (

@@ -1,6 +1,7 @@
 export type HarnessEvent =
   | { type: "session_init"; sessionId?: string; tools?: string[]; raw: unknown }
   | { type: "text_delta"; text: string; raw: unknown }
+  | { type: "reasoning_delta"; text: string; raw: unknown }
   | { type: "assistant_message"; text: string; raw: unknown }
   | { type: "tool_call"; name: string; raw: unknown }
   | { type: "result"; text: string; raw: unknown }

@@ -2,7 +2,7 @@
 
 Install and configure Overwatch — a voice-controlled orchestrator for tmux coding sessions, controllable from an iPhone.
 
-Assume the repo-root `install.sh` is the first step. It now provisions Homebrew, Node.js, Git, tmux, the repo checkout, the local app dependencies, and installs `pi` globally using the upstream-supported npm global install path. `overwatch setup` is configuration-only.
+Assume the repo-root `install.sh` is the first step. It now provisions Homebrew, Node.js, Git, tmux, the repo checkout, the local app dependencies, and installs `pi` globally using the upstream-supported npm global install path. `overwatch setup` owns user configuration and installs the Overwatch skill with `npx skills@latest add`.
 
 ### Step 1: Install Overwatch
 
@@ -47,15 +47,25 @@ overwatch setup --non-interactive --deepgram-key <KEY>
 
 For all other terminals, run:
 ```bash
-overwatch setup --non-interactive --deepgram-key <KEY> --configure-terminal <terminal>
+overwatch setup --non-interactive --deepgram-key <KEY> --terminal <terminal>
 ```
 Terminal names: `ghostty`, `kitty`, `alacritty`, `iterm2` (lowercase).
+Repeat `--terminal` or pass comma-separated values to configure more than one:
+```bash
+overwatch setup --terminal ghostty --terminal kitty
+overwatch setup --terminal ghostty,kitty
+```
+
+To turn the background gateway on during setup, add `--gateway on`. To keep it off, use `--gateway off`.
+
+By default, setup installs the `overwatch` skill from `.agents/skills/overwatch` globally for detected skill-capable agents using `npx skills@latest add`. Only skip that with `--skills off` when intentionally configuring a machine that should not receive agent skills.
 
 ### Step 5: Verify and start
 
 Check the setup:
 - `cat ~/.overwatch/config.json` — should have `deepgramApiKey`
 - `cat ~/.pi/agent/auth.json` — should have provider credentials (not empty `{}`)
+- the setup output should show the `overwatch` skill installed, or it should print the `npx skills@latest add ...` fallback command shape
 - terminal config should either already open tmux automatically, or the user intentionally chose to skip that step
 
 If both look good, tell the user:

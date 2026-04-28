@@ -7,19 +7,33 @@ const CONFIG_PATH = join(CONFIG_DIR, "config.json");
 
 export interface OverwatchConfig {
   deepgramApiKey?: string;
+  sttProvider?: "deepgram";
+  ttsProvider?: "deepgram";
+  sttModel?: string;
+  ttsModel?: string;
   relayUrl?: string;
   backendPort?: number;
   gateway?: {
-    autoStart?: boolean;
+    enabled?: boolean;
     stableRoom?: boolean;
+  };
+  /** Which harness to run. Default = pi-coding-agent. */
+  harness?: "pi-coding-agent" | "claude-code-cli" | "hermes";
+  hermes?: {
+    baseURL?: string;
+    apiKey?: string;
+    sessionId?: string;
+    skillName?: string;
   };
 }
 
 const DEFAULTS: OverwatchConfig = {
   relayUrl: "https://overwatch-relay.soami.workers.dev",
   backendPort: 8787,
+  sttProvider: "deepgram",
+  ttsProvider: "deepgram",
   gateway: {
-    autoStart: false,
+    enabled: false,
     stableRoom: true,
   },
 };

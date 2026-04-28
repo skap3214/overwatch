@@ -1,12 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { notificationStore } from "../notifications/store.js";
-import {
-  listScheduledMonitors,
-  subscribeScheduledMonitors,
-} from "../extensions/scheduler.js";
 import { TurnCoordinator } from "../orchestrator/turn-coordinator.js";
+import { getCapabilities } from "../harness/capabilities.js";
+import { listProviders } from "../harness/providers/index.js";
 import type { ClientEnvelope } from "./protocol.js";
+import type { MonitorSource } from "../scheduler/monitor-source.js";
+import { LocalMonitorSource } from "../scheduler/local-monitor-source.js";
+import type { HermesSkillsBridge } from "../scheduler/hermes-skills-bridge.js";
+
+export interface RealtimeServerOptions {
+  harnessProvider: string;
+  monitorSource?: MonitorSource;
+  skillsBridge?: HermesSkillsBridge;
+}
 
 const require = createRequire(import.meta.url);
 const wsLib = require("ws") as any;
@@ -43,10 +50,13 @@ function parseMessage(message: string): ClientEnvelope | null {
 
 export function attachRealtimeServer(
   server: any,
-  coordinator: TurnCoordinator
+  coordinator: TurnCoordinator,
+  options: RealtimeServerOptions = { harnessProvider: "pi-coding-agent" }
 ): void {
   const wss = new WebSocketServerCtor({ noServer: true });
   const clients = new Map<string, ClientConnection>();
+  const monitorSource: MonitorSource =
+    options.monitorSource ?? new LocalMonitorSource();
 
   const unsubscribeCoordinator = coordinator.subscribe((eventType, payload) => {
     for (const client of clients.values()) {
@@ -76,11 +86,20 @@ export function attachRealtimeServer(
     }
   );
 
-  const unsubscribeMonitors = subscribeScheduledMonitors((monitors) => {
+  const unsubscribeMonitors = monitorSource.subscribe((monitors) => {
     for (const client of clients.values()) {
       sendEnvelope(client.socket, {
         type: "monitor.updated",
         payload: { monitors },
+      });
+    }
+  });
+
+  const unsubscribeSkills = options.skillsBridge?.subscribe((skills) => {
+    for (const client of clients.values()) {
+      sendEnvelope(client.socket, {
+        type: "skill.updated",
+        payload: { skills },
       });
     }
   });
@@ -120,13 +139,38 @@ export function attachRealtimeServer(
           payload: { serverTime: new Date().toISOString() },
         });
         sendEnvelope(socket, {
+          type: "harness.snapshot",
+          payload: {
+            active: options.harnessProvider,
+            providers: listProviders(),
+            // Legacy fields for older mobile clients
+            provider: options.harnessProvider,
+            capabilities: getCapabilities(options.harnessProvider),
+          },
+        });
+        sendEnvelope(socket, {
           type: "notification.snapshot",
           payload: { notifications: notificationStore.list(100) },
         });
+        const monitors = await Promise.resolve(monitorSource.list());
         sendEnvelope(socket, {
           type: "monitor.snapshot",
-          payload: { monitors: listScheduledMonitors() },
+          payload: { monitors },
         });
+        if (options.skillsBridge) {
+          sendEnvelope(socket, {
+            type: "skill.snapshot",
+            payload: { skills: options.skillsBridge.list() },
+          });
+        }
+        return;
+      }
+
+      if (envelope.type === "settings.update") {
+        const payload = envelope.payload as Record<string, unknown> | null;
+        if (payload && typeof payload.tts === "boolean") {
+          coordinator.ttsEnabled = payload.tts;
+        }
         return;
       }
 
@@ -152,12 +196,20 @@ export function attachRealtimeServer(
           return;
         }
 
+        const tts =
+          typeof envelope.payload === "object" &&
+          envelope.payload &&
+          "tts" in envelope.payload
+            ? (envelope.payload as { tts: boolean }).tts !== false
+            : true;
+
         const abortController = new AbortController();
         socket.once("close", () => abortController.abort());
 
         try {
           await coordinator.runForegroundTurn({
             prompt: text,
+            tts,
             abortSignal: abortController.signal,
             send: (event, payload) => {
               sendEnvelope(socket, {
@@ -223,6 +275,7 @@ export function attachRealtimeServer(
     unsubscribeCoordinator();
     unsubscribeNotifications();
     unsubscribeMonitors();
+    unsubscribeSkills?.();
     wss.close();
   });
 }

@@ -37,6 +37,14 @@ export interface ScheduledMonitor {
   nextRunAt: string | null;
   lastFiredAt: string | null;
   recurring: boolean;
+  // Hermes-source extensions (optional for back-compat with local scheduler)
+  enabled?: boolean;
+  state?: "scheduled" | "running" | "paused" | "completed" | "failed" | string;
+  lastStatus?: "ok" | "error" | null;
+  lastError?: string | null;
+  paused?: boolean;
+  repeat?: { times: number | null; completed: number } | null;
+  source?: "local" | "hermes";
 }
 
 type SchedulerEvents = {

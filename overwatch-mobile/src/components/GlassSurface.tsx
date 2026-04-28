@@ -1,5 +1,5 @@
 import React, { type ReactNode, type ComponentProps } from "react";
-import { View, Platform } from "react-native";
+import { View, Platform, type ViewStyle } from "react-native";
 import {
   GlassView,
   isGlassEffectAPIAvailable,
@@ -29,13 +29,21 @@ export function GlassSurface({
   style,
   tintColor,
 }: Props) {
+  const shadow: ViewStyle = {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 2,
+  };
+
   if (canUseLiquidGlass()) {
     return (
       <GlassView
         colorScheme={colorScheme}
         glassEffectStyle={glassEffectStyle}
         isInteractive={isInteractive}
-        style={style}
+        style={[style, shadow]}
         tintColor={tintColor}
       >
         {children}
@@ -43,5 +51,5 @@ export function GlassSurface({
     );
   }
 
-  return <View style={[style, fallbackStyle]}>{children}</View>;
+  return <View style={[style, fallbackStyle, shadow]}>{children}</View>;
 }

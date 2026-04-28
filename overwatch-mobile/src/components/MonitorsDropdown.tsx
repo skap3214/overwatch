@@ -6,10 +6,13 @@ import {
   Text,
   View,
 } from "react-native";
-import { Clock3 } from "lucide-react-native";
+import { Clock3, Pause as PauseIcon, AlertTriangle, Plus } from "lucide-react-native";
 import { useMonitorsStore } from "../stores/monitors-store";
 import { useColors } from "../theme";
 import { GlassSurface } from "./GlassSurface";
+import { MonitorDetailScreen } from "./MonitorDetailScreen";
+import { MonitorEditForm } from "./MonitorEditForm";
+import type { ScheduledMonitor } from "../types";
 
 type Props = {
   visible: boolean;
@@ -46,6 +49,13 @@ export function MonitorsDropdown({ visible, onClose }: Props) {
   const colors = useColors();
   const monitors = useMonitorsStore((s) => s.monitors);
   const [now, setNow] = useState(() => Date.now());
+  const [detail, setDetail] = useState<ScheduledMonitor | null>(null);
+  const [editing, setEditing] = useState<ScheduledMonitor | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  // True if the backend exposes the Hermes-source extensions (in any monitor row).
+  // Drives whether we show "+ New" / detail / paused / error UI.
+  const isHermesMode = monitors.some((m) => m.source === "hermes");
 
   useEffect(() => {
     if (!visible) return;
@@ -54,11 +64,13 @@ export function MonitorsDropdown({ visible, onClose }: Props) {
     return () => clearInterval(interval);
   }, [visible]);
 
+  // Don't auto-close — even with zero monitors, in Hermes mode the user can
+  // tap "+ New". Local mode keeps original behavior of auto-closing on empty.
   useEffect(() => {
-    if (visible && monitors.length === 0) {
+    if (visible && monitors.length === 0 && !isHermesMode) {
       onClose();
     }
-  }, [visible, monitors.length, onClose]);
+  }, [visible, monitors.length, isHermesMode, onClose]);
 
   return (
     <Modal
@@ -97,7 +109,7 @@ export function MonitorsDropdown({ visible, onClose }: Props) {
               }}
               tintColor={colors.surface}
             >
-              {monitors.length === 0 ? (
+              {monitors.length === 0 && !isHermesMode ? (
                 <View style={{ paddingHorizontal: 18, paddingVertical: 22 }}>
                   <Text
                     style={{
@@ -115,20 +127,34 @@ export function MonitorsDropdown({ visible, onClose }: Props) {
                 <View style={{ paddingHorizontal: 14, paddingVertical: 6 }}>
                   {monitors.map((monitor, index) => {
                     const lastRun = formatLastRun(monitor.lastFiredAt, now);
+                    const isPaused = !!monitor.paused;
+                    const hasError = monitor.lastStatus === "error";
+                    const tint = isPaused
+                      ? "#eab308"
+                      : hasError
+                        ? colors.error
+                        : colors.textDim;
+                    const Icon = isPaused
+                      ? PauseIcon
+                      : hasError
+                        ? AlertTriangle
+                        : Clock3;
                     return (
-                      <View
+                      <Pressable
                         key={monitor.id}
-                        style={{
+                        onPress={() => setDetail(monitor)}
+                        style={({ pressed }) => ({
                           paddingHorizontal: 8,
                           paddingVertical: 12,
-                          borderBottomWidth: index === monitors.length - 1 ? 0 : 1,
+                          borderBottomWidth:
+                            index === monitors.length - 1 && !isHermesMode ? 0 : 1,
                           borderBottomColor: colors.border,
                           flexDirection: "row",
                           alignItems: "center",
                           gap: 12,
-                        }}
+                          opacity: pressed ? 0.5 : 1,
+                        })}
                       >
-                        {/* Icon */}
                         <View
                           style={{
                             width: 32,
@@ -139,10 +165,8 @@ export function MonitorsDropdown({ visible, onClose }: Props) {
                             justifyContent: "center",
                           }}
                         >
-                          <Clock3 size={15} color={colors.textDim} />
+                          <Icon size={15} color={tint} />
                         </View>
-
-                        {/* Title + schedule */}
                         <View style={{ flex: 1, gap: 2 }}>
                           <Text
                             numberOfLines={1}
@@ -164,28 +188,92 @@ export function MonitorsDropdown({ visible, onClose }: Props) {
                           >
                             {monitor.scheduleLabel}
                             {lastRun ? ` · ${lastRun}` : ""}
+                            {isPaused ? " · paused" : ""}
+                            {hasError && !isPaused ? " · errored" : ""}
                           </Text>
                         </View>
-
-                        {/* Next run */}
                         <Text
                           style={{
-                            color: colors.text,
+                            color: isPaused ? colors.textFaint : colors.text,
                             fontSize: 12,
                             fontFamily: "IosevkaAile-Medium",
                           }}
                         >
-                          {formatCountdown(monitor.nextRunAt, now)}
+                          {isPaused ? "—" : formatCountdown(monitor.nextRunAt, now)}
                         </Text>
-                      </View>
+                      </Pressable>
                     );
                   })}
+
+                  {isHermesMode && (
+                    <Pressable
+                      onPress={() => setCreating(true)}
+                      style={({ pressed }) => ({
+                        paddingHorizontal: 8,
+                        paddingVertical: 12,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 12,
+                        opacity: pressed ? 0.5 : 1,
+                      })}
+                    >
+                      <View
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 999,
+                          backgroundColor: colors.surfaceAlt,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Plus size={15} color={colors.textDim} />
+                      </View>
+                      <Text
+                        style={{
+                          flex: 1,
+                          color: colors.textDim,
+                          fontSize: 13,
+                          fontFamily: "IosevkaAile-Medium",
+                        }}
+                      >
+                        New monitor
+                      </Text>
+                    </Pressable>
+                  )}
                 </View>
               )}
             </GlassSurface>
           </Pressable>
         </View>
       </Pressable>
+
+      {detail && (
+        <MonitorDetailScreen
+          monitor={detail}
+          onClose={() => setDetail(null)}
+          onEdit={(m) => {
+            setDetail(null);
+            setEditing(m);
+          }}
+        />
+      )}
+      {editing && (
+        <MonitorEditForm
+          monitor={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            // The bridge will refresh on the next poll/refresh; nothing to do here.
+          }}
+        />
+      )}
+      {creating && (
+        <MonitorEditForm
+          monitor={null}
+          onClose={() => setCreating(false)}
+          onSaved={() => {}}
+        />
+      )}
     </Modal>
   );
 }

@@ -2,22 +2,26 @@ import React, { useEffect, useRef } from "react";
 import { View, Text, Pressable, Animated, Alert } from "react-native";
 import { useConnectionStore } from "../stores/connection-store";
 import { useMonitorsStore } from "../stores/monitors-store";
+import { useNotificationsStore } from "../stores/notifications-store";
 import { useColors } from "../theme";
 import { GlassSurface } from "./GlassSurface";
-import { Settings, Trash2, Clock3 } from "lucide-react-native";
+import { SkillsPill } from "./SkillsPill";
+import { Settings, Trash2, Clock3, Bell } from "lucide-react-native";
 
 type Props = {
   onSettingsPress: () => void;
   onNewChat: () => void;
   onMonitorsPress: () => void;
+  onNotificationsPress?: () => void;
 };
 
 const AMBER = "#f59e0b";
 
-export function StatusBar({ onSettingsPress, onNewChat, onMonitorsPress }: Props) {
+export function StatusBar({ onSettingsPress, onNewChat, onMonitorsPress, onNotificationsPress }: Props) {
   const colors = useColors();
   const connectionStatus = useConnectionStore((s) => s.connectionStatus);
   const monitorCount = useMonitorsStore((s) => s.monitorCount());
+  const unreadCount = useNotificationsStore((s) => s.unreadCount());
 
   const dotColor =
     connectionStatus === "connected" ? colors.success
@@ -68,12 +72,36 @@ export function StatusBar({ onSettingsPress, onNewChat, onMonitorsPress }: Props
           fallbackStyle={{ backgroundColor: colors.surface }}
           tintColor={colors.surface}
         >
-          <Trash2 size={22} color={colors.text} />
+          <Trash2 size={26} color={colors.text} />
         </GlassSurface>
       </Pressable>
 
-      {/* Right: monitors + settings */}
+      {/* Right: skills + notifications + monitors + settings */}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <SkillsPill />
+        {unreadCount > 0 && onNotificationsPress ? (
+          <Pressable onPress={onNotificationsPress} hitSlop={16}>
+            <GlassSurface
+              isInteractive
+              style={{ padding: 10, borderRadius: 14 }}
+              fallbackStyle={{ backgroundColor: colors.surface }}
+              tintColor={colors.surface}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                <Bell size={22} color={colors.text} />
+                <Text
+                  style={{
+                    color: colors.textDim,
+                    fontSize: 12,
+                    fontFamily: "IosevkaAile-Medium",
+                  }}
+                >
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </Text>
+              </View>
+            </GlassSurface>
+          </Pressable>
+        ) : null}
         {monitorCount > 0 ? (
           <Pressable onPress={onMonitorsPress} hitSlop={16}>
             <GlassSurface
@@ -83,7 +111,7 @@ export function StatusBar({ onSettingsPress, onNewChat, onMonitorsPress }: Props
               tintColor={colors.surface}
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-                <Clock3 size={20} color={colors.text} />
+                <Clock3 size={24} color={colors.text} />
                 {monitorCount >= 2 ? (
                   <Text
                     style={{
@@ -115,7 +143,7 @@ export function StatusBar({ onSettingsPress, onNewChat, onMonitorsPress }: Props
                 opacity: pulseAnim,
               }}
             />
-            <Settings size={22} color={colors.text} />
+            <Settings size={26} color={colors.text} />
           </GlassSurface>
         </Pressable>
       </View>

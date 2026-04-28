@@ -175,13 +175,13 @@ function printLogs(lines: number): void {
   console.log(all.slice(-lines).join("\n"));
 }
 
-function setAutoStart(enabled: boolean): void {
+export function setGatewayEnabled(enabled: boolean): void {
   const config = loadConfig();
   saveConfig({
     ...config,
     gateway: {
       ...config.gateway,
-      autoStart: enabled,
+      enabled,
       stableRoom: config.gateway?.stableRoom ?? true,
     },
   });
@@ -191,7 +191,7 @@ export function buildGatewayCommand(): Command {
   const command = new Command("gateway").description("Manage the background Overwatch gateway");
 
   command
-    .command("run")
+    .command("run", { hidden: true })
     .description("Run the gateway in the current process")
     .option("--replace", "Replace an existing gateway process")
     .option("--service", "Run under a process supervisor without printing pairing UI")
@@ -203,8 +203,6 @@ export function buildGatewayCommand(): Command {
       });
     });
 
-  command.command("install").description("Install the macOS background service").action(() => installGatewayService());
-  command.command("uninstall").description("Uninstall the macOS background service").action(() => uninstallGatewayService());
   command.command("start").description("Start the background service").action(() => startGatewayService());
   command.command("stop").description("Stop the background service").action(() => stopGatewayService());
   command.command("restart").description("Restart the background service").action(() => {
@@ -217,18 +215,6 @@ export function buildGatewayCommand(): Command {
     .description("Print recent gateway logs")
     .option("-n, --lines <count>", "Number of lines", "80")
     .action((opts: { lines: string }) => printLogs(Number.parseInt(opts.lines, 10) || 80));
-  command.command("auto-on").description("Enable and start the background gateway").action(() => {
-    installGatewayService();
-    startGatewayService();
-    setAutoStart(true);
-    console.log(chalk.green("✓") + " gateway auto-on enabled");
-  });
-  command.command("auto-off").description("Disable and stop the background gateway").action(() => {
-    setAutoStart(false);
-    stopGatewayService();
-    uninstallGatewayService();
-    console.log(chalk.green("✓") + " gateway auto-on disabled");
-  });
 
   return command;
 }
