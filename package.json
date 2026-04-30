@@ -11,7 +11,7 @@
     "setup": "tsx packages/cli/src/index.ts setup",
     "overwatch:start": "tsx packages/cli/src/index.ts start",
     "overwatch:status": "tsx packages/cli/src/index.ts status",
-    "overwatch:sessions": "tsx packages/cli/src/index.ts sessions",
+    "overwatch:update": "tsx packages/cli/src/index.ts update",
     "test": "tsx --test tests/**/*.test.ts"
   },
   "dependencies": {

@@ -5,7 +5,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import chalk from "chalk";
-import { loadConfig, saveConfig } from "../config.js";
 import {
   ERROR_LOG_PATH,
   GATEWAY_LOG_PATH,
@@ -173,18 +172,6 @@ function printLogs(lines: number): void {
   }
   const all = readFileSync(GATEWAY_LOG_PATH, "utf-8").trimEnd().split("\n");
   console.log(all.slice(-lines).join("\n"));
-}
-
-export function setGatewayEnabled(enabled: boolean): void {
-  const config = loadConfig();
-  saveConfig({
-    ...config,
-    gateway: {
-      ...config.gateway,
-      enabled,
-      stableRoom: config.gateway?.stableRoom ?? true,
-    },
-  });
 }
 
 export function buildGatewayCommand(): Command {

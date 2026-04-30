@@ -76,12 +76,11 @@ npm run setup
 Useful non-interactive variants:
 
 ```bash
-overwatch setup --non-interactive --deepgram-key <KEY>
-overwatch setup --non-interactive --deepgram-key <KEY> --terminal ghostty
+overwatch setup --non-interactive --deepgram-key <KEY> --agent-auth-file /path/to/auth.json --terminal ghostty
+overwatch setup --non-interactive --deepgram-key <KEY> --agent-auth-file /path/to/auth.json --terminal existing-tmux
 overwatch setup --terminal ghostty --terminal kitty
-overwatch setup --agent hermes --gateway on
+overwatch setup --agent hermes
 overwatch setup --agent-provider anthropic
-overwatch setup --agent-auth-file /path/to/auth.json --non-interactive
 overwatch setup --stt deepgram --tts deepgram --stt-model nova-3 --tts-model aura-2-aries-en
 overwatch setup --skills off
 npx skills@latest add skap3214/overwatch/.agents/skills/overwatch --global --all --copy
@@ -93,24 +92,24 @@ npx skills@latest add skap3214/overwatch/.agents/skills/overwatch --global --all
 npm run overwatch:start
 ```
 
-This starts the backend, connects to the relay, and shows a QR code. Scan it with the iOS app.
+This starts the background launchd gateway, which starts the backend, connects to the relay, and writes pairing details to the gateway logs/status. `overwatch start` is an alias of `overwatch gateway start`.
 
 ### Other Commands
 
 ```bash
 npm run overwatch:status     # connection + config status
-npm run overwatch:sessions   # list tmux sessions
+npm run overwatch:update     # fetch latest CLI/app and refresh the wrapper
 ```
 
 ### CLI Schema
 
 ```bash
-overwatch setup [--agent <id>] [--skills on|off] [--terminal <name>] [--gateway on|off]
+overwatch setup [--agent <id>] [--skills on|off] [--terminal <name>]
 overwatch start
+overwatch update
 overwatch status
 overwatch gateway start|stop|restart|status|logs
 overwatch agent list|status|set <id>
-overwatch sessions
 ```
 
 ## Architecture

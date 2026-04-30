@@ -6,14 +6,9 @@
 
 ## Decision
 
-Overwatch now treats the relay gateway as a durable local service, not only as a foreground `overwatch start` process.
+Overwatch treats the relay gateway as a durable local service. The public CLI no longer exposes a foreground gateway mode.
 
-The CLI supports two operating modes:
-
-1. Manual foreground mode: `overwatch start --foreground`
-2. Background service mode: `overwatch setup --gateway on`, backed by a macOS `launchd` agent
-
-This follows the same operational pattern as Hermes-style gateways: a long-running supervised process owns platform connectivity, while setup owns installation/enabling and gateway commands start, stop, restart, inspect, and tail that process.
+This follows the same operational pattern as Hermes-style gateways: a long-running supervised process owns platform connectivity, while gateway commands start, stop, restart, inspect, and tail that process. `overwatch start` is only a friendly alias for `overwatch gateway start`.
 
 ## Files
 
@@ -22,7 +17,6 @@ This follows the same operational pattern as Hermes-style gateways: a long-runni
 | `packages/cli/src/gateway-runtime.ts` | Starts/reuses the backend, starts the encrypted relay bridge, writes status, prints pairing |
 | `packages/cli/src/gateway-state.ts` | PID file, status file, logs, durable host identity, durable room code |
 | `packages/cli/src/commands/gateway.ts` | Public `overwatch gateway start/stop/restart/status/logs` command group plus the hidden supervisor entrypoint |
-| `packages/cli/src/commands/start.ts` | Friendly entrypoint; delegates to service mode when the gateway is enabled |
 | `packages/cli/src/relay-bridge.ts` | Host-side encrypted relay bridge and heartbeat/reconnect behavior |
 | `relay/src/room.ts` | Cloudflare Durable Object room, host/client WebSocket forwarding, persisted host public key/readiness |
 | `overwatch-mobile/src/services/realtime.ts` | Phone-side relay WebSocket, E2E encryption, heartbeat/reconnect behavior |
@@ -46,14 +40,12 @@ All service state is scoped under `~/.overwatch/`:
 
 | Command | Behavior |
 | --- | --- |
-| `overwatch setup --gateway on` | Install/start the macOS launchd service and set `gateway.enabled=true` |
-| `overwatch setup --gateway off` | Stop/uninstall the macOS launchd service and set `gateway.enabled=false` |
+| `overwatch start` | Alias for `overwatch gateway start` |
 | `overwatch gateway start` | Start the launchd service, installing it first if missing |
 | `overwatch gateway stop` | Stop launchd service and signal any tracked gateway PID |
 | `overwatch gateway restart` | Stop then start service |
 | `overwatch gateway status` | Print PID, service install state, relay/backend/phone status, room, logs |
 | `overwatch gateway logs -n 80` | Print recent gateway log lines |
-| `overwatch start --foreground` | Manual foreground start even if the gateway is enabled |
 
 ## Reconnect Semantics
 

@@ -2,11 +2,10 @@
 
 import { Command } from "commander";
 import { setupCommand } from "./commands/setup.js";
-import { startCommand } from "./commands/start.js";
 import { statusCommand } from "./commands/status.js";
-import { sessionsCommand } from "./commands/sessions.js";
-import { buildGatewayCommand } from "./commands/gateway.js";
+import { buildGatewayCommand, startGatewayService } from "./commands/gateway.js";
 import { buildAgentCommand } from "./commands/agent.js";
+import { updateCommand } from "./commands/update.js";
 
 const program = new Command();
 
@@ -34,7 +33,6 @@ program
     "Configure terminal; repeatable or comma-separated (ghostty, kitty, alacritty, iterm2, cmux, none, existing-tmux)",
     collectValues
   )
-  .option("--gateway <mode>", "Gateway service mode (on, off)")
   .option(
     "--agent-provider <provider>",
     "Run Pi provider login directly (for example: anthropic, openai-codex, github-copilot)"
@@ -48,9 +46,13 @@ program
 
 program
   .command("start")
-  .description("Start backend, connect to relay, show QR code")
-  .option("--foreground", "Run in this terminal even when gateway is on")
-  .action(startCommand);
+  .description("Start the background Overwatch gateway")
+  .action(() => startGatewayService());
+
+program
+  .command("update")
+  .description("Update the installed Overwatch CLI and app")
+  .action(updateCommand);
 
 program.addCommand(buildGatewayCommand());
 program.addCommand(buildAgentCommand());
@@ -59,10 +61,5 @@ program
   .command("status")
   .description("Show connection and configuration status")
   .action(statusCommand);
-
-program
-  .command("sessions")
-  .description("List tmux sessions")
-  .action(sessionsCommand);
 
 program.parse();

@@ -113,7 +113,7 @@ Evolve the now-simpler Deepgram-centric config toward a provider-centric config 
 
 - `packages/cli/src/config.ts`
 - `packages/cli/src/commands/setup.ts`
-- `packages/cli/src/commands/start.ts`
+- `packages/cli/src/commands/gateway.ts`
 - `packages/cli/src/commands/status.ts`
 - `src/config.ts`
 - `README.md`

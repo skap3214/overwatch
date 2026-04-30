@@ -52,7 +52,7 @@ overwatch setup --non-interactive --deepgram-key <KEY>
 
 For all other users, run managed terminal setup:
 ```bash
-overwatch setup --non-interactive --deepgram-key <KEY> --terminal <terminal>
+overwatch setup --non-interactive --deepgram-key <KEY> --agent-auth-file /path/to/auth.json --terminal <terminal>
 ```
 Terminal names: `ghostty`, `kitty`, `alacritty`, `iterm2` (lowercase).
 Repeat `--terminal` or pass comma-separated values to configure more than one:
@@ -65,7 +65,7 @@ Use `--terminal none`, `--terminal skip`, or `--terminal existing-tmux` to skip 
 
 Overwatch-managed tmux is intentionally native-first for non-tmux users: it enables reliable tmux scrollback, mouse support, truecolor, OSC 52 clipboard, and a large history, but avoids no-prefix key remaps, drag-copy overrides, and a visible tmux status bar. Existing tmux users should prefer the skip path instead of trying to merge opinions.
 
-To turn the background gateway on during setup, add `--gateway on`. To keep it off, use `--gateway off`.
+The gateway always runs as a background launchd service. Start it with `overwatch start` or `overwatch gateway start` after setup.
 
 By default, setup installs the `overwatch` skill from `.agents/skills/overwatch` globally for detected skill-capable agents using `npx skills@latest add`. Only skip that with `--skills off` when intentionally configuring a machine that should not receive agent skills.
 
@@ -78,7 +78,7 @@ Check the setup:
 - terminal config should either already open Overwatch-managed tmux automatically, or the user intentionally chose `--terminal existing-tmux` / `skip` and will create tmux sessions themselves
 
 If both look good, tell the user:
-> Setup complete! Restart your terminal (new tabs will auto-start tmux sessions), then run `overwatch start`. It will show a QR code — scan it with the Overwatch iOS app (TestFlight).
+> Setup complete! Restart your terminal (new tabs will auto-start tmux sessions), then run `overwatch start`. The background gateway will start and print where to find the pairing details for the Overwatch iOS app (TestFlight).
 
 If `~/.pi/agent/auth.json` is missing or empty, tell the user:
 > Almost done! Pi auth still needs a human browser login. Run `overwatch setup --agent-provider anthropic` and complete the provider login, or run `pi` and use `/login`. Then run `overwatch start`.

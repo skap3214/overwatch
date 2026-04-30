@@ -85,7 +85,7 @@ export async function statusCommand(): Promise<void> {
   );
   console.log(`  Relay:    ${chalk.dim(config.relayUrl ?? "not configured")}`);
   console.log(
-    `  Gateway:  ${gatewayPid ? chalk.green(`running (PID ${gatewayPid})`) : chalk.red("not running")}${config.gateway?.enabled ? chalk.dim(" on") : chalk.dim(" off")}`
+    `  Gateway:  ${gatewayPid ? chalk.green(`running (PID ${gatewayPid})`) : chalk.red("not running")}`
   );
   if (gatewayStatus?.room) {
     console.log(

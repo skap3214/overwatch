@@ -12,14 +12,12 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import chalk from "chalk";
 import prompts from "prompts";
-import { getConfigDir, loadConfig, saveConfig } from "../config.js";
 import {
-  installGatewayService,
-  setGatewayEnabled,
-  startGatewayService,
-  stopGatewayService,
-  uninstallGatewayService,
-} from "./gateway.js";
+  getConfigDir,
+  loadConfig,
+  saveConfig,
+  type OverwatchConfig,
+} from "../config.js";
 import {
   configureHermesHarnessConfig,
   enableHermesPlugin,
@@ -31,6 +29,7 @@ import {
 import {
   configureTerminalsNonInteractive,
   hasOverwatchAutoStartConfigured,
+  normalizeTerminalInputs,
   setupTerminal,
   userHasCmux,
 } from "../terminal-setup.js";
@@ -238,7 +237,7 @@ async function loginWithSDK(
 }
 
 
-interface SetupOptions {
+export interface SetupOptions {
   agent?: string;
   agentAuthFile?: string;
   agentProvider?: string;
@@ -248,7 +247,6 @@ interface SetupOptions {
   tts?: string;
   sttModel?: string;
   ttsModel?: string;
-  gateway?: string;
   skills?: string;
   nonInteractive?: boolean;
 }
@@ -284,23 +282,122 @@ function commandExists(command: string): boolean {
   }
 }
 
-function configureGateway(mode: string): void {
-  const normalized = mode.trim().toLowerCase();
-  if (normalized === "on") {
-    installGatewayService();
-    startGatewayService();
-    setGatewayEnabled(true);
-    console.log(chalk.green("✓") + " Gateway enabled");
-    return;
+export interface NonInteractiveValidationContext {
+  config: OverwatchConfig;
+  agentId: AgentId;
+  agentState: AgentAuthState;
+  hasCmux: boolean;
+  hasOverwatchAutoStart: boolean;
+  commandAvailable: (command: string) => boolean;
+  agentAuthFileUsable: (path: string) => boolean;
+  hermesConfigUsable: () => boolean;
+}
+
+export function getNonInteractiveSetupIssues(
+  options: SetupOptions,
+  context: NonInteractiveValidationContext,
+): string[] {
+  const issues: string[] = [];
+  const terminalInputs = normalizeTerminalInputs(options.terminal);
+  const skillsMode = normalizeSkillsSetupMode(options.skills);
+  const allowedTerminals = new Set([
+    "ghostty",
+    "kitty",
+    "alacritty",
+    "iterm2",
+    "cmux",
+    "none",
+    "skip",
+    "existing-tmux",
+    "existing_tmux",
+  ]);
+  const unknownTerminals = terminalInputs.filter(
+    (value) => !allowedTerminals.has(value.trim().toLowerCase()),
+  );
+
+  if (!options.deepgramKey?.trim() && !context.config.deepgramApiKey) {
+    issues.push("Provide --deepgram-key <key> or configure Deepgram before running non-interactively.");
   }
-  if (normalized === "off") {
-    setGatewayEnabled(false);
-    stopGatewayService();
-    uninstallGatewayService();
-    console.log(chalk.green("✓") + " Gateway disabled");
-    return;
+
+  if (context.agentId === "pi-coding-agent") {
+    const hasImportableAuth = Boolean(
+      options.agentAuthFile && context.agentAuthFileUsable(options.agentAuthFile),
+    );
+    if (options.agentProvider) {
+      issues.push(
+        "--agent-provider starts an interactive OAuth flow; use --agent-auth-file <path> for non-interactive setup.",
+      );
+    }
+    if (!context.agentState.configured && !hasImportableAuth) {
+      issues.push(
+        "Pi auth is required. Pass --agent-auth-file <path> or run interactive setup first.",
+      );
+    }
   }
-  throw new Error(`Unknown gateway mode "${mode}". Use "on" or "off".`);
+
+  if (context.agentId === "claude-code-cli" && !context.commandAvailable("claude")) {
+    issues.push("Claude Code CLI is required for --agent claude-code-cli, but `claude` is not on PATH.");
+  }
+
+  if (context.agentId === "hermes" && !context.hermesConfigUsable()) {
+    issues.push("Hermes setup requires ~/.hermes/config.yaml with platforms.api_server.extra.key.");
+  }
+
+  if (
+    terminalInputs.length === 0 &&
+    !context.hasCmux &&
+    !context.hasOverwatchAutoStart
+  ) {
+    issues.push(
+      "Choose terminal setup explicitly with --terminal <ghostty|kitty|alacritty|iterm2|cmux> or --terminal existing-tmux.",
+    );
+  }
+  if (unknownTerminals.length > 0) {
+    issues.push(
+      `Unsupported terminal value(s): ${unknownTerminals.join(", ")}. Use ghostty, kitty, alacritty, iterm2, cmux, none, or existing-tmux.`,
+    );
+  }
+
+  if (skillsMode === "on" && !context.commandAvailable("npx")) {
+    issues.push("`npx` is required to install the Overwatch skill; pass --skills off only if you intentionally want to skip it.");
+  }
+
+  return issues;
+}
+
+function isAgentAuthFileUsable(sourcePath: string): boolean {
+  const resolvedSource = sourcePath.startsWith("~")
+    ? join(homedir(), sourcePath.slice(2))
+    : sourcePath;
+  if (!existsSync(resolvedSource)) return false;
+  try {
+    const raw = JSON.parse(readFileSync(resolvedSource, "utf-8")) as Record<
+      string,
+      Record<string, unknown>
+    >;
+    return Object.values(raw).some(
+      (value) => Boolean(value) && Object.keys(value).length > 0,
+    );
+  } catch {
+    return false;
+  }
+}
+
+function hermesConfigUsable(): boolean {
+  try {
+    configureHermesHarnessConfig(loadConfig());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function printNonInteractiveIssues(issues: string[]): void {
+  console.log(chalk.red("\n✗ Non-interactive setup cannot continue"));
+  for (const issue of issues) {
+    console.log(`  - ${issue}`);
+  }
+  console.log("");
 }
 
 function printRemainingActions(options: {
@@ -372,6 +469,25 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
   config.harness = agentId;
 
   let agentState = getAgentAuthState();
+  if (nonInteractive) {
+    const issues = getNonInteractiveSetupIssues(options, {
+      config,
+      agentId,
+      agentState,
+      hasCmux: userHasCmux(),
+      hasOverwatchAutoStart: hasOverwatchAutoStartConfigured(),
+      commandAvailable: commandExists,
+      agentAuthFileUsable: isAgentAuthFileUsable,
+      hermesConfigUsable,
+    });
+    if (issues.length > 0) {
+      printNonInteractiveIssues(issues);
+      rl.close();
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   if (agentId === "pi-coding-agent") {
     if (agentState.configured) {
       console.log(
@@ -394,6 +510,11 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
               error instanceof Error ? error.message : "Failed to import agent auth"
             }`
         );
+        if (nonInteractive) {
+          rl.close();
+          process.exitCode = 1;
+          return;
+        }
       }
     } else if (!agentState.configured || options.agentProvider) {
       // Skip the login flow if pi-coding-agent isn't installed at all — the
@@ -485,13 +606,6 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
     }
   }
 
-  saveConfig(config);
-  console.log(chalk.green("✓") + ` Config saved to ${getConfigDir()}/config.json`);
-
-  if (options.gateway) {
-    configureGateway(options.gateway);
-  }
-
   let skillsReady = true;
   if (skillsMode === "on") {
     console.log("");
@@ -512,6 +626,12 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
   } else {
     console.log(chalk.dim("  Agent skills setup skipped by flag."));
   }
+  if (nonInteractive && !skillsReady) {
+    console.log(chalk.red("\n✗ Non-interactive setup failed while installing required skills\n"));
+    rl.close();
+    process.exitCode = 1;
+    return;
+  }
 
   let terminalSetup = { configuredAny: false, skipped: false };
   if (options.terminal && options.terminal.length > 0) {
@@ -524,6 +644,14 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
 
   const terminalReady =
     terminalSetup.skipped || userHasCmux() || hasOverwatchAutoStartConfigured();
+  if (nonInteractive && !terminalReady) {
+    printNonInteractiveIssues([
+      "Terminal setup did not complete. Pass --terminal existing-tmux to intentionally skip, or configure a supported terminal.",
+    ]);
+    process.exitCode = 1;
+    return;
+  }
+
   if (terminalSetup.configuredAny) {
     console.log(
       chalk.yellow(
@@ -531,6 +659,9 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
       )
     );
   }
+
+  saveConfig(config);
+  console.log(chalk.green("✓") + ` Config saved to ${getConfigDir()}/config.json`);
 
   printRemainingActions({
     configHasDeepgram: Boolean(config.deepgramApiKey),
