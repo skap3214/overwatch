@@ -67,8 +67,15 @@ set -sg focus-events on
 # inside bracketed paste as CSI-u, and Claude Code's paste tokenizer doesn't
 # decode it (anthropics/claude-code#43169). Users on that harness who hit it
 # can drop 'set -s extended-keys-format xterm' into ~/.tmux.conf to override.
+#
+# Version-gated: extended-keys was added in tmux 3.2, extended-keys-format
+# in 3.4. Older tmux would error on the unknown option and abort config load.
+%if "#{>=:#{version},3.2}"
 set -s extended-keys on
+%endif
+%if "#{>=:#{version},3.4}"
 set -s extended-keys-format csi-u
+%endif
 set -as terminal-features 'xterm*:extkeys'
 set -as terminal-features 'xterm-ghostty:extkeys'
 set -as terminal-features 'xterm-kitty:extkeys'
