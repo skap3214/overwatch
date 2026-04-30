@@ -31,7 +31,7 @@ program
   .option("--skills <mode>", "Install the Overwatch agent skill (on, off)")
   .option(
     "--terminal <name>",
-    "Configure terminal; repeatable or comma-separated (ghostty, kitty, alacritty, iterm2, cmux, none)",
+    "Configure terminal; repeatable or comma-separated (ghostty, kitty, alacritty, iterm2, cmux, none, existing-tmux)",
     collectValues
   )
   .option("--gateway <mode>", "Gateway service mode (on, off)")

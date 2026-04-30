@@ -40,12 +40,17 @@ Ask the user for:
 
 Ask the user which terminal they use. Supported terminals: Ghostty, Kitty, Alacritty, iTerm2, cmux.
 
-If they use **cmux**, no terminal configuration is needed — cmux has built-in multiplexing. Run:
+If they already use **tmux** and care about their own tmux config/keybindings, skip Overwatch's tmux setup. Overwatch will still discover and control tmux sessions they create themselves:
+```bash
+overwatch setup --non-interactive --deepgram-key <KEY> --terminal existing-tmux
+```
+
+If they use **cmux**, no terminal configuration is needed because cmux has built-in multiplexing. Run:
 ```bash
 overwatch setup --non-interactive --deepgram-key <KEY>
 ```
 
-For all other terminals, run:
+For all other users, run managed terminal setup:
 ```bash
 overwatch setup --non-interactive --deepgram-key <KEY> --terminal <terminal>
 ```
@@ -55,6 +60,10 @@ Repeat `--terminal` or pass comma-separated values to configure more than one:
 overwatch setup --terminal ghostty --terminal kitty
 overwatch setup --terminal ghostty,kitty
 ```
+
+Use `--terminal none`, `--terminal skip`, or `--terminal existing-tmux` to skip all Overwatch tmux/terminal changes.
+
+Overwatch-managed tmux is intentionally native-first for non-tmux users: it enables reliable tmux scrollback, mouse support, truecolor, OSC 52 clipboard, and a large history, but avoids no-prefix key remaps, drag-copy overrides, and a visible tmux status bar. Existing tmux users should prefer the skip path instead of trying to merge opinions.
 
 To turn the background gateway on during setup, add `--gateway on`. To keep it off, use `--gateway off`.
 
@@ -66,7 +75,7 @@ Check the setup:
 - `cat ~/.overwatch/config.json` — should have `deepgramApiKey`
 - `cat ~/.pi/agent/auth.json` — should have provider credentials (not empty `{}`)
 - the setup output should show the `overwatch` skill installed, or it should print the `npx skills@latest add ...` fallback command shape
-- terminal config should either already open tmux automatically, or the user intentionally chose to skip that step
+- terminal config should either already open Overwatch-managed tmux automatically, or the user intentionally chose `--terminal existing-tmux` / `skip` and will create tmux sessions themselves
 
 If both look good, tell the user:
 > Setup complete! Restart your terminal (new tabs will auto-start tmux sessions), then run `overwatch start`. It will show a QR code — scan it with the Overwatch iOS app (TestFlight).
