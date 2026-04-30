@@ -26,7 +26,7 @@ Start here before extending Overwatch.
 - [architecture/002-product-vision.md](architecture/002-product-vision.md)
 - [architecture/004-harness-pluggability.md](architecture/004-harness-pluggability.md) — `OrchestratorHarness` interface; reasoning-vs-TTS isolation invariant
 - [architecture/005-hermes-bridge.md](architecture/005-hermes-bridge.md) — Hermes Agent integration (cron, skills, sessions, voice)
-- [architecture/006-overwatch-hermes-plugin.md](architecture/006-overwatch-hermes-plugin.md) — Bidirectional Hermes plugin for tmux orchestration
+- [architecture/006-overwatch-hermes-plugin.md](architecture/006-overwatch-hermes-plugin.md) — Retired Hermes plugin; custom tmux tools are no longer published
 
 ## Notes For Future Agents
 

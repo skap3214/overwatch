@@ -20,7 +20,7 @@ import {
 } from "../config.js";
 import {
   configureHermesHarnessConfig,
-  enableHermesPlugin,
+  disableHermesPlugin,
 } from "../hermes-config.js";
 import {
   installOverwatchSkills,
@@ -553,16 +553,8 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
   } else if (agentId === "hermes") {
     config = configureHermesHarnessConfig(config);
     console.log(chalk.green("✓") + " Hermes harness configured from ~/.hermes/config.yaml");
-    try {
-      await enableHermesPlugin(config);
-      console.log(chalk.green("✓") + " Hermes Overwatch plugin enabled");
-    } catch (error) {
-      console.log(
-        chalk.yellow("!") +
-          ` Hermes plugin setup skipped: ${
-            error instanceof Error ? error.message : "unknown error"
-          }`
-      );
+    if (await disableHermesPlugin()) {
+      console.log(chalk.green("✓") + " Removed legacy Hermes Overwatch plugin tools");
     }
   } else if (!commandExists("claude")) {
     console.log(chalk.yellow("!") + " Claude Code CLI is not installed or not on PATH.");

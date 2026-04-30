@@ -1,6 +1,6 @@
 /**
- * Minimal wrapper around the `tmux` CLI for the HTTP routes consumed by the
- * Hermes plugin. We shell out via execFile (no shell) so caller-supplied
+ * Minimal wrapper around the `tmux` CLI for the HTTP routes. We shell out via
+ * execFile (no shell) so caller-supplied
  * strings are safely passed as separate argv entries — protects against
  * injection in `keys` and similar fields.
  */

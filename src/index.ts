@@ -243,7 +243,7 @@ app.route(
 // Hermes webhook receiver — push delivery from Hermes jobs to Overwatch notifications
 app.route("/api/v1/hermes/webhook", createHermesWebhookRouter());
 
-// Tmux orchestration — exposed for the Hermes plugin (and any other consumer)
+// Tmux orchestration — exposed for local clients that need HTTP access.
 app.route(
   "/api/v1/tmux",
   createTmuxRouter({

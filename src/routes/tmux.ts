@@ -1,6 +1,6 @@
 /**
- * /api/v1/tmux/* — HTTP routes the Hermes plugin (and any other consumer) uses
- * to drive Overwatch-managed tmux sessions.
+ * /api/v1/tmux/* — HTTP routes for clients that need to drive
+ * Overwatch-managed tmux sessions.
  *
  * Loopback-only by default (the backend binds 127.0.0.1). If a token is set,
  * Bearer auth is enforced. There is intentionally no allowlist of session
@@ -127,7 +127,7 @@ export function createTmuxRouter(opts: TmuxRoutesOptions = {}): Hono {
   });
 
   // POST /api/v1/tmux/send-keys  { session, pane?, keys, literal?, submit? }
-  // Convenience endpoint matching the Hermes plugin's tmux_send_keys schema.
+  // Convenience endpoint for clients that know the session and pane separately.
   app.post("/send-keys", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as {
       session?: string;

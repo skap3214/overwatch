@@ -11,6 +11,7 @@ import chalk from "chalk";
 import { loadConfig, saveConfig } from "../config.js";
 import {
   configureHermesHarnessConfig,
+  disableHermesPlugin,
   getHermesStatus,
 } from "../hermes-config.js";
 
@@ -126,7 +127,6 @@ async function statusCommand(): Promise<void> {
     console.log(`  daemon:    ${hermes.daemonRunning ? chalk.green(`running (PID ${hermes.daemonPid})`) : chalk.red("not running")}`);
     console.log(`  api:       ${hermes.apiBaseURL} ${hermes.apiReachable ? chalk.green("reachable") : chalk.yellow("unreachable")}`);
     console.log(`  api key:   ${hermes.apiKey ? chalk.green(maskKey(hermes.apiKey)) : chalk.red("not configured")}`);
-    console.log(`  plugin:    ${hermes.pluginInstalled ? chalk.green("installed") : chalk.yellow("not installed")} ${hermes.pluginEnabled ? chalk.green("enabled") : chalk.yellow("not enabled")}`);
   }
 
   console.log("");
@@ -153,6 +153,7 @@ async function setCommand(id: string): Promise<void> {
   let cfg = loadConfig();
   if (id === "hermes") {
     cfg = configureHermesHarnessConfig(cfg);
+    await disableHermesPlugin();
   } else {
     cfg.harness = id as typeof cfg.harness;
   }

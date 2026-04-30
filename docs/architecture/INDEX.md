@@ -18,4 +18,4 @@
   Hermes Agent (Nous Research) integration: `HermesAgentHarness`, jobs/skills/sessions bridges, voice + skill bootstrap, and the monitor REST shim.
 
 - [006-overwatch-hermes-plugin.md](006-overwatch-hermes-plugin.md)
-  Overwatch tools published to Hermes as a Python plugin. Lets the user's Hermes drive Overwatch tmux from CLI, dashboard, Discord, etc.
+  Retired Python plugin placeholder. Overwatch no longer publishes custom Hermes tmux tools; Hermes should use normal shell `tmux` access.
