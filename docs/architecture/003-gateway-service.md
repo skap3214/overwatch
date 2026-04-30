@@ -8,7 +8,7 @@
 
 Overwatch treats the relay gateway as a durable local service. The public CLI no longer exposes a foreground gateway mode.
 
-This follows the same operational pattern as Hermes-style gateways: a long-running supervised process owns platform connectivity, while gateway commands start, stop, restart, inspect, and tail that process. `overwatch start` is only a friendly alias for `overwatch gateway start`.
+This follows the same operational pattern as Hermes-style gateways: a long-running supervised process owns platform connectivity, while gateway commands start, stop, restart, inspect, and tail that process. `overwatch start` is only a friendly alias for `overwatch gateway start`; both commands still print pairing details after the background service starts.
 
 ## Files
 
@@ -41,10 +41,11 @@ All service state is scoped under `~/.overwatch/`:
 | Command | Behavior |
 | --- | --- |
 | `overwatch start` | Alias for `overwatch gateway start` |
-| `overwatch gateway start` | Start the launchd service, installing it first if missing |
+| `overwatch gateway start` | Start the launchd service, installing it first if missing, then print pairing QR/room info |
 | `overwatch gateway stop` | Stop launchd service and signal any tracked gateway PID |
-| `overwatch gateway restart` | Stop then start service |
+| `overwatch gateway restart` | Stop then start service, then print pairing QR/room info |
 | `overwatch gateway status` | Print PID, service install state, relay/backend/phone status, room, logs |
+| `overwatch gateway info` | Reprint the phone pairing QR code, room, relay, and host key from the latest gateway status |
 | `overwatch gateway logs -n 80` | Print recent gateway log lines |
 
 ## Reconnect Semantics

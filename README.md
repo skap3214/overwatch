@@ -92,7 +92,7 @@ npx skills@latest add skap3214/overwatch/.agents/skills/overwatch --global --all
 npm run overwatch:start
 ```
 
-This starts the background launchd gateway, which starts the backend, connects to the relay, and writes pairing details to the gateway logs/status. `overwatch start` is an alias of `overwatch gateway start`.
+This starts the background launchd gateway, then prints the QR code and room details needed to pair the iOS app. `overwatch start` is an alias of `overwatch gateway start`.
 
 ### Other Commands
 
@@ -108,7 +108,7 @@ overwatch setup [--agent <id>] [--skills on|off] [--terminal <name>]
 overwatch start
 overwatch update
 overwatch status
-overwatch gateway start|stop|restart|status|logs
+overwatch gateway start|stop|restart|status|info|logs
 overwatch agent list|status|set <id>
 ```
 

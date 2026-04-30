@@ -5,14 +5,16 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import chalk from "chalk";
+import { loadConfig } from "../config.js";
 import {
   ERROR_LOG_PATH,
   GATEWAY_LOG_PATH,
   LOG_DIR,
   getRunningGatewayPid,
   readGatewayStatus,
+  type GatewayStatus,
 } from "../gateway-state.js";
-import { runGateway } from "../gateway-runtime.js";
+import { printPairingDetails, runGateway } from "../gateway-runtime.js";
 
 const LAUNCHD_LABEL = "dev.overwatch.gateway";
 
@@ -107,6 +109,68 @@ function launchdTarget(): string {
   return `gui/${userInfo().uid}`;
 }
 
+function qrPayload(status: GatewayStatus): string {
+  const config = loadConfig();
+  return JSON.stringify({
+    r: status.room,
+    k: status.hostPublicKey,
+    ...(config.deepgramApiKey && { d: config.deepgramApiKey }),
+  });
+}
+
+function statusIsFresh(status: GatewayStatus | null, since: number): status is GatewayStatus {
+  if (!status?.room || !status.hostPublicKey) return false;
+  const updatedAt = Date.parse(status.updatedAt);
+  return Number.isFinite(updatedAt) && updatedAt >= since - 1000;
+}
+
+async function waitForGatewayInfo(since: number, timeoutMs = 10000): Promise<GatewayStatus | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const status = readGatewayStatus();
+    if (statusIsFresh(status, since)) return status;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return readGatewayStatus();
+}
+
+export function printGatewayInfo(status = readGatewayStatus()): boolean {
+  const pid = getRunningGatewayPid();
+  console.log("");
+  if (!status?.room || !status.hostPublicKey) {
+    console.log(chalk.red("No gateway pairing information found yet."));
+    console.log(chalk.dim("Run `overwatch gateway start` first, then retry `overwatch gateway info`."));
+    console.log("");
+    return false;
+  }
+
+  if (!pid) {
+    console.log(chalk.yellow("!") + " Gateway is not currently running; this pairing info may not be usable until it starts.");
+    console.log("");
+  }
+  printPairingDetails(status.room, qrPayload(status));
+  console.log(chalk.dim(`Relay: ${status.relayUrl}`));
+  console.log(chalk.dim(`Status updated: ${status.updatedAt}`));
+  console.log("");
+  return true;
+}
+
+export async function startGatewayAndPrintInfo(): Promise<void> {
+  const startedAt = Date.now();
+  startGatewayService();
+  const status = await waitForGatewayInfo(startedAt);
+  if (!statusIsFresh(status, startedAt)) {
+    console.log(chalk.yellow("!") + " Gateway started, but pairing info was not refreshed yet.");
+    console.log(chalk.dim(`Check logs with: overwatch gateway logs`));
+    if (status) {
+      console.log(chalk.dim("Last known pairing info:"));
+      printGatewayInfo(status);
+    }
+    return;
+  }
+  printGatewayInfo(status);
+}
+
 export function installGatewayService(): void {
   requireMacos();
   const path = plistPath();
@@ -190,13 +254,16 @@ export function buildGatewayCommand(): Command {
       });
     });
 
-  command.command("start").description("Start the background service").action(() => startGatewayService());
+  command.command("start").description("Start the background service and print pairing info").action(startGatewayAndPrintInfo);
   command.command("stop").description("Stop the background service").action(() => stopGatewayService());
   command.command("restart").description("Restart the background service").action(() => {
     stopGatewayService();
-    startGatewayService();
+    return startGatewayAndPrintInfo();
   });
   command.command("status").description("Show gateway service and connection status").action(() => printGatewayStatus());
+  command.command("info").description("Print phone pairing QR code and room info").action(() => {
+    if (!printGatewayInfo()) process.exitCode = 1;
+  });
   command
     .command("logs")
     .description("Print recent gateway logs")

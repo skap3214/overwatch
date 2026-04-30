@@ -3,7 +3,7 @@
 import { Command } from "commander";
 import { setupCommand } from "./commands/setup.js";
 import { statusCommand } from "./commands/status.js";
-import { buildGatewayCommand, startGatewayService } from "./commands/gateway.js";
+import { buildGatewayCommand, startGatewayAndPrintInfo } from "./commands/gateway.js";
 import { buildAgentCommand } from "./commands/agent.js";
 import { updateCommand } from "./commands/update.js";
 
@@ -46,8 +46,8 @@ program
 
 program
   .command("start")
-  .description("Start the background Overwatch gateway")
-  .action(() => startGatewayService());
+  .description("Start the background Overwatch gateway and print pairing info")
+  .action(startGatewayAndPrintInfo);
 
 program
   .command("update")

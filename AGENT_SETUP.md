@@ -78,7 +78,7 @@ Check the setup:
 - terminal config should either already open Overwatch-managed tmux automatically, or the user intentionally chose `--terminal existing-tmux` / `skip` and will create tmux sessions themselves
 
 If both look good, tell the user:
-> Setup complete! Restart your terminal (new tabs will auto-start tmux sessions), then run `overwatch start`. The background gateway will start and print where to find the pairing details for the Overwatch iOS app (TestFlight).
+> Setup complete! Restart your terminal (new tabs will auto-start tmux sessions), then run `overwatch start`. The background gateway will start and print the QR code and room details for the Overwatch iOS app (TestFlight). Run `overwatch gateway info` later to print them again.
 
 If `~/.pi/agent/auth.json` is missing or empty, tell the user:
 > Almost done! Pi auth still needs a human browser login. Run `overwatch setup --agent-provider anthropic` and complete the provider login, or run `pi` and use `/login`. Then run `overwatch start`.
