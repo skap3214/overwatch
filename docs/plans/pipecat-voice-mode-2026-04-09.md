@@ -1,7 +1,7 @@
 # Plan: Pipecat Real-Time Voice Mode
 
 **Date:** 2026-04-09
-**Status:** Proposed
+**Status:** SUPERSEDED by [voice-harness-bridge-overhaul-2026-05-01.md](./voice-harness-bridge-overhaul-2026-05-01.md)
 **Related Docs:** [../architecture/002-product-vision.md](../architecture/002-product-vision.md), [react-native-app-plan-2026-04-08.md](react-native-app-plan-2026-04-08.md)
 **Reuses architecture from:** `/Users/soami/Desktop/code/int/halo-2/`
 

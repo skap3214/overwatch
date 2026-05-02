@@ -1,0 +1,14 @@
+agent_name = "overwatch-orchestrator"
+secret_set = "overwatch"
+region = "us-west"
+
+[scaling]
+min_agents = 0
+max_agents = 4
+
+[build]
+context_dir = "."
+dockerfile = "Dockerfile"
+
+[build.exclude]
+patterns = [".venv/", "tests/", "__pycache__/", ".pytest_cache/", ".ruff_cache/", ".mypy_cache/"]

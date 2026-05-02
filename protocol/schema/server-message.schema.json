@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://overwatch.dev/protocol/server-message.schema.json",
+  "title": "ServerMessage",
+  "description": "Typed envelopes for non-RTVI events flowing between the cloud orchestrator and the mobile client over the Daily WebRTC data channel. Sits alongside the RTVI standard messages (user-transcription, bot-llm-text, etc.) which are not redefined here.",
+  "oneOf": [
+    { "$ref": "#/$defs/UserText" },
+    { "$ref": "#/$defs/HarnessEventForUI" },
+    { "$ref": "#/$defs/HarnessStateSnapshot" },
+    { "$ref": "#/$defs/InterruptIntent" },
+    { "$ref": "#/$defs/Notification" },
+    { "$ref": "#/$defs/ErrorResponse" }
+  ],
+  "$defs": {
+    "UserText": {
+      "type": "object",
+      "required": ["type", "text"],
+      "additionalProperties": false,
+      "description": "User-typed text from mobile InputBar. Handled by the orchestrator's HarnessBridgeProcessor identically to a voice transcript: in-flight check, then submit_text or submit_with_steer.",
+      "properties": {
+        "type": { "const": "user_text" },
+        "text": { "type": "string" }
+      }
+    },
+    "HarnessEventForUI": {
+      "type": "object",
+      "required": ["type", "event"],
+      "additionalProperties": false,
+      "description": "Wraps a HarnessEvent the orchestrator's registry routed to voice_action='ui-only'. Mobile renders as transcript pill / status row.",
+      "properties": {
+        "type": { "const": "harness_event" },
+        "event": {
+          "description": "Full HarnessEvent payload (see harness-event.schema.json).",
+          "type": "object"
+        }
+      }
+    },
+    "HarnessStateSnapshot": {
+      "type": "object",
+      "required": ["type", "active_target", "in_flight"],
+      "additionalProperties": false,
+      "description": "Periodic state snapshot for the mobile UI to derive 'is the harness busy' indicators.",
+      "properties": {
+        "type": { "const": "harness_state" },
+        "active_target": { "type": "string" },
+        "in_flight": { "type": "boolean" },
+        "active_correlation_id": { "type": "string" }
+      }
+    },
+    "InterruptIntent": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "description": "PTT press from mobile. Hint to the orchestrator to begin the audio_stopped phase early. Not authoritative — the actual cancellation only happens once a transcript or user_text is received.",
+      "properties": {
+        "type": { "const": "interrupt_intent" }
+      }
+    },
+    "Notification": {
+      "type": "object",
+      "required": ["type", "id", "title", "body", "kind"],
+      "additionalProperties": false,
+      "description": "Overwatch-internal notification surfaced to the mobile UI. Mirrors the existing notification system.",
+      "properties": {
+        "type": { "const": "notification" },
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "kind": { "type": "string" },
+        "metadata": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "ErrorResponse": {
+      "type": "object",
+      "required": ["type", "request_id", "error"],
+      "additionalProperties": false,
+      "description": "Correlated error response. request_id echoes the originating envelope's id so the client can match.",
+      "properties": {
+        "type": { "const": "error_response" },
+        "request_id": { "type": "string" },
+        "error": {
+          "type": "object",
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "type": "string" },
+            "message": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

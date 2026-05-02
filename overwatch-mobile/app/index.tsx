@@ -1,16 +1,22 @@
-import React, { useEffect, useRef, useCallback, useState } from "react";
-import { View, Text, KeyboardAvoidingView, Platform, Keyboard, Pressable, Modal } from "react-native";
+import React, { useEffect, useCallback, useState } from "react";
+import {
+  View,
+  Text,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
+  Pressable,
+  Modal,
+} from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
-import { setAudioModeAsync } from "expo-audio";
-import * as Haptics from "expo-haptics";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { LinearGradient } from "expo-linear-gradient";
-import { useConnectionStore } from "../src/stores/connection-store";
+
 import { useThemeStore } from "../src/stores/theme-store";
-import { useOverwatchTurn } from "../src/hooks/use-overwatch-turn";
-import { useTurnStore } from "../src/stores/turn-store";
-import { useRecorder } from "../src/hooks/use-audio-recorder";
+import { usePairingStore, deriveSessionToken } from "../src/stores/pairing-store";
+import { useConversationStore } from "../src/stores/conversation";
+import { usePipecatSession } from "../src/hooks/use-pipecat-session";
 import { useColors } from "../src/theme";
 import { StatusBar as OverwatchStatusBar } from "../src/components/StatusBar";
 import { MonitorsDropdown } from "../src/components/MonitorsDropdown";
@@ -20,18 +26,26 @@ import { InputBar } from "../src/components/InputBar";
 import { PTTButton } from "../src/components/PTTButton";
 import { SettingsPage } from "../src/components/SettingsPage";
 import { QRScanner } from "../src/components/QRScanner";
-import { useRealtimeConnection } from "../src/hooks/use-realtime-connection";
 import "../global.css";
 
 export default function App() {
   const colors = useColors();
-  const { loadBackendURL, connectionStatus } = useConnectionStore();
-  const { sendText, sendVoice, stopAudio } = useOverwatchTurn();
-  const { amplitude, startRecording, stopRecording } = useRecorder();
   const hand = useThemeStore((s) => s.hand);
-  const turnState = useTurnStore((s) => s.turnState);
+
+  const isPaired = usePairingStore((s) => Boolean(s.userId && s.pairingToken));
+  const relayUrl = usePairingStore((s) => s.relayUrl);
+  const userId = usePairingStore((s) => s.userId);
+  const pairingToken = usePairingStore((s) => s.pairingToken);
+  const hydratePairing = usePairingStore((s) => s.hydrate);
+
+  const transportState = useConversationStore((s) => s.transportState);
+  const turnState = useConversationStore((s) => s.turnState);
+  const setTurnState = useConversationStore((s) => s.setTurnState);
+  const clearMessages = useConversationStore((s) => s.clearMessages);
   const recordingUI = turnState === "recording" || turnState === "preparing";
-  useRealtimeConnection();
+
+  const { connect, disconnect, sendUserText, setMicEnabled, sendInterruptIntent } =
+    usePipecatSession();
 
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -40,9 +54,16 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
 
   useEffect(() => {
-    const showSub = Keyboard.addListener("keyboardWillShow", () => setKeyboardVisible(true));
-    const hideSub = Keyboard.addListener("keyboardWillHide", () => setKeyboardVisible(false));
-    return () => { showSub.remove(); hideSub.remove(); };
+    const showSub = Keyboard.addListener("keyboardWillShow", () =>
+      setKeyboardVisible(true),
+    );
+    const hideSub = Keyboard.addListener("keyboardWillHide", () =>
+      setKeyboardVisible(false),
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
   }, []);
 
   const [fontsLoaded] = useFonts({
@@ -52,16 +73,51 @@ export default function App() {
   });
 
   useEffect(() => {
-    setAudioModeAsync({
-      allowsRecording: false,
-      interruptionMode: "duckOthers",
-      shouldPlayInBackground: false,
-      playsInSilentMode: true,
-      shouldRouteThroughEarpiece: false,
-    });
-    loadBackendURL();
+    void hydratePairing();
     useThemeStore.getState().loadMode();
-  }, []);
+  }, [hydratePairing]);
+
+  // Auto-connect once paired and hydrated.
+  useEffect(() => {
+    if (!isPaired) return;
+    let cancelled = false;
+    (async () => {
+      const sessionId = `s-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const sessionToken = await deriveSessionToken(pairingToken, sessionId);
+
+      // Mint Daily room URL via the relay.
+      let roomUrl = "";
+      let roomToken = "";
+      try {
+        const res = await fetch(`${relayUrl}/api/sessions/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: userId, pairing_token: pairingToken }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as {
+            daily_room_url?: string;
+            daily_token?: string;
+          };
+          roomUrl = data.daily_room_url ?? "";
+          roomToken = data.daily_token ?? "";
+        }
+      } catch (err) {
+        console.warn("session start failed", err);
+      }
+      if (!roomUrl || !roomToken || cancelled) return;
+
+      await connect({
+        endpoint: roomUrl,
+        sessionToken,
+        mode: "ptt",
+      });
+    })();
+    return () => {
+      cancelled = true;
+      void disconnect();
+    };
+  }, [isPaired, relayUrl, userId, pairingToken, connect, disconnect]);
 
   const goToSettings = useCallback(() => setShowSettings(true), []);
   const closeSettings = useCallback(() => setShowSettings(false), []);
@@ -69,69 +125,31 @@ export default function App() {
   const closeMonitors = useCallback(() => setShowMonitors(false), []);
 
   const handleNewChat = useCallback(() => {
-    useTurnStore.getState().clearMessages();
-  }, []);
+    clearMessages();
+  }, [clearMessages]);
 
-  const handleTextSubmit = useCallback((text: string) => { sendText(text); }, [sendText]);
+  const handleTextSubmit = useCallback(
+    (text: string) => {
+      void sendUserText(text);
+    },
+    [sendUserText],
+  );
 
   const handleStartRecording = useCallback(async () => {
-    const t0 = Date.now();
-    // Stop TTS playback only — backend turn continues until new message is sent
-    stopAudio();
-    console.log(`[perf] stopAudio: ${Date.now() - t0}ms`);
-    try {
-      useTurnStore.getState().setTurnState("preparing");
-      const t1 = Date.now();
-      await startRecording();
-      console.log(`[perf] startRecording: ${Date.now() - t1}ms (total from tap: ${Date.now() - t0}ms)`);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      useTurnStore.getState().setTurnState("recording");
-    } catch (err) {
-      console.error("startRecording failed:", err);
-      useTurnStore.getState().setTurnState("idle");
-    }
-  }, [startRecording, stopAudio]);
+    setTurnState("recording");
+    void sendInterruptIntent();
+    void setMicEnabled(true);
+  }, [setMicEnabled, sendInterruptIntent, setTurnState]);
 
-  const stoppingRef = useRef(false);
   const handleStopRecording = useCallback(async () => {
-    const state = useTurnStore.getState().turnState;
-    if (state !== "recording" && state !== "preparing") return;
-    if (stoppingRef.current) return;
-    stoppingRef.current = true;
-    const t0 = Date.now();
-    useTurnStore.getState().setTurnState("processing");
-    try {
-      const result = await stopRecording();
-      console.log(`[perf] stopRecording: ${Date.now() - t0}ms`);
-      if (result?.fileUri) {
-        const t1 = Date.now();
-        sendVoice(result.fileUri, result.mimeType ?? "audio/m4a");
-        console.log(`[perf] sendVoice kicked off: ${Date.now() - t1}ms (total from stop: ${Date.now() - t0}ms)`);
-      } else {
-        useTurnStore.getState().setTurnState("idle");
-      }
-    } catch (err) {
-      console.error("stopRecording failed:", err);
-      useTurnStore.getState().setTurnState("idle");
-    } finally {
-      stoppingRef.current = false;
-    }
-  }, [stopRecording, sendVoice]);
+    void setMicEnabled(false);
+    setTurnState("idle");
+  }, [setMicEnabled, setTurnState]);
 
   const handleCancelRecording = useCallback(async () => {
-    const state = useTurnStore.getState().turnState;
-    if (state !== "recording" && state !== "preparing") return;
-    if (stoppingRef.current) return;
-    stoppingRef.current = true;
-    try {
-      await stopRecording();
-    } catch (err) {
-      console.error("cancel stopRecording failed:", err);
-    } finally {
-      useTurnStore.getState().setTurnState("idle");
-      stoppingRef.current = false;
-    }
-  }, [stopRecording]);
+    void setMicEnabled(false);
+    setTurnState("idle");
+  }, [setMicEnabled, setTurnState]);
 
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
@@ -145,7 +163,7 @@ export default function App() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={0}
       >
-        {connectionStatus === "connected" ? (
+        {transportState === "connected" ? (
           <>
             <TranscriptView topInset={Platform.OS === "ios" ? 104 : 80} />
 
@@ -168,25 +186,52 @@ export default function App() {
                 onStartRecording={handleStartRecording}
                 onStopRecording={handleStopRecording}
                 onCancelRecording={handleCancelRecording}
-                amplitude={amplitude}
+                amplitude={0}
               />
             </View>
           </>
         ) : (
-          <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 16, paddingHorizontal: 40 }}>
-            <Text style={{ color: colors.textDim, fontFamily: "IosevkaAile-Regular", fontSize: 15, textAlign: "center" }}>
-              {connectionStatus === "reconnecting" ? "Reconnecting to your Mac..." : connectionStatus === "connecting" ? "Connecting..." : "Not connected"}
+          <View
+            style={{
+              flex: 1,
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 16,
+              paddingHorizontal: 40,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.textDim,
+                fontFamily: "IosevkaAile-Regular",
+                fontSize: 15,
+                textAlign: "center",
+              }}
+            >
+              {transportState === "connecting"
+                ? "Connecting..."
+                : isPaired
+                  ? "Reconnecting..."
+                  : "Not paired"}
             </Text>
-            {connectionStatus === "disconnected" ? (
+            {!isPaired ? (
               <Pressable
                 onPress={() => setShowQR(true)}
                 style={{
                   backgroundColor: colors.accent,
-                  paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12,
+                  paddingHorizontal: 24,
+                  paddingVertical: 12,
+                  borderRadius: 12,
                 }}
               >
-                <Text style={{ color: colors.bg, fontFamily: "IosevkaAile-Medium", fontSize: 14 }}>
-                  Connect
+                <Text
+                  style={{
+                    color: colors.bg,
+                    fontFamily: "IosevkaAile-Medium",
+                    fontSize: 14,
+                  }}
+                >
+                  Pair via QR
                 </Text>
               </Pressable>
             ) : (
@@ -194,10 +239,18 @@ export default function App() {
                 onPress={goToSettings}
                 style={{
                   backgroundColor: colors.accent,
-                  paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12,
+                  paddingHorizontal: 24,
+                  paddingVertical: 12,
+                  borderRadius: 12,
                 }}
               >
-                <Text style={{ color: colors.bg, fontFamily: "IosevkaAile-Medium", fontSize: 14 }}>
+                <Text
+                  style={{
+                    color: colors.bg,
+                    fontFamily: "IosevkaAile-Medium",
+                    fontSize: 14,
+                  }}
+                >
                   Settings
                 </Text>
               </Pressable>
@@ -206,7 +259,6 @@ export default function App() {
         )}
       </KeyboardAvoidingView>
 
-      {/* Floating header with gradient fade */}
       <View style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 }}>
         <LinearGradient
           colors={[`${colors.bg}ff`, `${colors.bg}e6`, `${colors.bg}99`, `${colors.bg}00`]}
@@ -222,7 +274,6 @@ export default function App() {
         </LinearGradient>
       </View>
 
-      {/* QR Scanner Modal */}
       <Modal visible={showQR} animationType="slide">
         <QRScanner onClose={() => setShowQR(false)} />
       </Modal>
@@ -234,7 +285,6 @@ export default function App() {
         onClose={() => setShowNotifications(false)}
       />
 
-      {/* Settings */}
       <Modal visible={showSettings} animationType="slide">
         <View style={{ flex: 1, backgroundColor: colors.bg }}>
           <View style={{ height: Platform.OS === "ios" ? 54 : 30 }} />

@@ -1,6 +1,6 @@
 import React, { useRef, useState } from "react";
 import { View, ActivityIndicator } from "react-native";
-import { useTurnStore } from "../stores/turn-store";
+import { useConversationStore } from "../stores/conversation";
 import { useColors } from "../theme";
 import { GlassSurface } from "./GlassSurface";
 import * as Haptics from "expo-haptics";
@@ -40,7 +40,8 @@ export function PTTButton({
   hand,
 }: Props) {
   const colors = useColors();
-  const turnState = useTurnStore((s) => s.turnState);
+  const turnState = useConversationStore((s) => s.turnState);
+  const isRemoteMuted = useConversationStore((s) => s.isRemoteMuted);
 
   const isPreparing = turnState === "preparing";
   const isRecording = turnState === "recording";
@@ -63,6 +64,10 @@ export function PTTButton({
     setWillCancel(false);
     setDragX(0);
     if (isActive) return;
+    if (isRemoteMuted) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onStartRecording();
   };

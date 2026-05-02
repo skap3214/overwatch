@@ -1,0 +1,35 @@
+/**
+ * Local types for the adapter-protocol server.
+ * Consumes the codegenned wire-protocol types from @overwatch/shared/protocol.
+ */
+
+import type {
+  Cancel,
+  HarnessCommand,
+  HarnessEvent,
+  SubmitText,
+  SubmitWithSteer,
+} from "@overwatch/shared/protocol";
+
+export type { HarnessCommand, HarnessEvent, SubmitText, SubmitWithSteer, Cancel };
+
+export interface AdapterProtocolDeps {
+  /** Relay URL the daemon connects to. */
+  relayUrl: string;
+  /** Token from `overwatch setup`, identifies this user. */
+  pairingToken: string;
+  /** Per-user secret used to verify orchestrator-signed per-session tokens. */
+  sessionTokenSecret: string;
+  /** Path to the JSONL audit log. */
+  auditLogPath: string;
+  /** When set, every wire event from each adapter is appended to a JSONL file. */
+  catchAllLoggerEnabled: boolean;
+}
+
+export type CommandKind = HarnessCommand["kind"];
+
+export const COMMAND_ALLOWLIST: ReadonlySet<CommandKind> = new Set<CommandKind>([
+  "submit_text",
+  "submit_with_steer",
+  "cancel",
+]);

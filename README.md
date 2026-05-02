@@ -1,6 +1,13 @@
 # Overwatch
 
-Voice-controlled orchestrator for tmux-hosted coding agent sessions. Control Claude Code, Codex, and other agents running on your Mac from your phone.
+Voice-controlled orchestrator for tmux-hosted coding agent sessions. Control Claude Code, Pi, Hermes, and other agents running on your Mac from your phone.
+
+> **Status (May 2026):** private alpha. The branch
+> `overhaul/voice-harness-bridge` is the new architecture: Pipecat Cloud handles
+> the voice loop, the Mac runs only the session-host daemon, and the relay
+> mints Pipecat Cloud sessions. See
+> [`docs/plans/voice-harness-bridge-overhaul-2026-05-01.md`](./docs/plans/voice-harness-bridge-overhaul-2026-05-01.md)
+> for the full design.
 
 ## Install First
 

@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState } from "react";
 import { FlatList, View, Text, Keyboard, useWindowDimensions } from "react-native";
-import { useTurnStore } from "../stores/turn-store";
+import { useConversationStore } from "../stores/conversation";
 import { useColors } from "../theme";
 import { useScrollToBottom } from "../hooks/use-scroll-to-bottom";
 import { ScrollToBottomButton } from "./ScrollToBottomButton";
@@ -100,8 +100,8 @@ function MessageBubble({ message, colors, isLast, anchorMinHeight }: {
 
 export function TranscriptView({ topInset = 0 }: { topInset?: number }) {
   const colors = useColors();
-  const messages = useTurnStore((s) => s.messages);
-  const turnState = useTurnStore((s) => s.turnState);
+  const messages = useConversationStore((s) => s.messages);
+  const turnState = useConversationStore((s) => s.turnState);
   const { height: windowHeight } = useWindowDimensions();
 
   const {

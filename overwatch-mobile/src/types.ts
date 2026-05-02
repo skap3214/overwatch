@@ -1,6 +1,17 @@
-export type TurnState = "idle" | "preparing" | "recording" | "processing" | "playing";
+/**
+ * Mobile-side types. The wire-protocol types (HarnessEvent, HarnessCommand,
+ * Envelope, ServerMessage) are imported from `@overwatch/shared/protocol`,
+ * codegenned from `/protocol/schema/`. This file holds only the local UI
+ * concepts that don't belong to the wire protocol.
+ */
 
-export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting";
+/** Mobile UI turn-state machine for the PTT button affordances. */
+export type TurnState =
+  | "idle"
+  | "preparing"
+  | "recording"
+  | "processing"
+  | "playing";
 
 export type MessageRole = "user" | "assistant" | "tool_call" | "error";
 
@@ -12,17 +23,6 @@ export type Message = {
   /** Reasoning trace from a reasoning-capable harness (Hermes). Rendered, never spoken. */
   reasoning?: string;
 };
-
-export type SSEEvent =
-  | { type: "text_delta"; data: { text: string } }
-  | { type: "tool_call"; data: { name: string } }
-  | {
-      type: "audio_chunk";
-      data: { base64: string; mimeType: string };
-    }
-  | { type: "tts_error"; data: { message: string } }
-  | { type: "error"; data: { message: string } }
-  | { type: "done"; data: Record<string, never> };
 
 export type NotificationStatus = "new" | "seen" | "acknowledged";
 
@@ -55,7 +55,6 @@ export type ScheduledMonitor = {
   nextRunAt: string | null;
   lastFiredAt: string | null;
   recurring: boolean;
-  // Hermes-source extensions (optional for back-compat)
   enabled?: boolean;
   state?: string;
   lastStatus?: "ok" | "error" | null;
@@ -95,7 +94,6 @@ export type AgentProviderInfo = {
 export type HarnessSnapshot = {
   active: string;
   providers: AgentProviderInfo[];
-  // Legacy fields, kept so older snapshots still typecheck:
   provider: string;
   capabilities: HarnessCapabilities;
 };
@@ -106,11 +104,4 @@ export type JobRun = {
   ranAt: string;
   filename: string;
   outputPath: string;
-};
-
-export type WsEnvelope<T = unknown> = {
-  id: string;
-  createdAt: string;
-  type: string;
-  payload: T;
 };

@@ -1,0 +1,49 @@
+[project]
+name = "overwatch-pipeline"
+version = "0.1.0"
+description = "Overwatch cloud orchestrator — pipecat pipeline for the voice + harness bridge"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pipecat-ai[daily,deepgram,cartesia,silero,smart-turn,openai]>=0.0.94",
+    "pipecatcloud>=0.4.4",
+    "pydantic>=2.13",
+    "loguru>=0.7",
+    "python-dotenv>=1.0",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp>=1.27",
+    "prometheus-client>=0.21",
+    "sentry-sdk>=2.18",
+    "websockets>=13.0",
+    "pynacl>=1.5",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4",
+    "pytest-asyncio>=1.1",
+    "pytest-timeout>=2.3",
+    "ruff>=0.7",
+    "mypy>=1.13",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+timeout = 60
+pythonpath = ["."]
+markers = [
+    "unit: fast in-process unit tests",
+    "integration: hits real boundaries with mocked externals",
+    "live: requires real provider credentials, skip in CI by default",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]

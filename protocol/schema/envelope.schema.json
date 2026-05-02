@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://overwatch.dev/protocol/envelope.schema.json",
+  "title": "Envelope",
+  "description": "Top-level wrapper for any wire message. The receiver validates this shape first, then validates `payload` against the schema selected by `kind`.",
+  "type": "object",
+  "required": ["protocol_version", "kind", "id", "timestamp", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "protocol_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "MAJOR.MINOR — receivers refuse mismatched majors during the client-ready / bot-ready handshake."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["harness_event", "harness_command", "server_message"],
+      "description": "Selects which payload schema to apply."
+    },
+    "id": {
+      "type": "string",
+      "description": "Globally unique message id (e.g. ULID)."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC timestamp from the sender."
+    },
+    "session_token": {
+      "type": "string",
+      "description": "Per-session HMAC token. Required on every message except the initial pairing exchange."
+    },
+    "payload": {
+      "description": "The kind-specific payload. Validated separately by the receiver."
+    }
+  }
+}

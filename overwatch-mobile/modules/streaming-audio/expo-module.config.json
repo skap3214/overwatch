@@ -1,9 +1,0 @@
-{
-  "platforms": ["apple", "android"],
-  "apple": {
-    "modules": ["StreamingAudioModule"]
-  },
-  "android": {
-    "modules": ["expo.modules.streamingaudio.StreamingAudioModule"]
-  }
-}

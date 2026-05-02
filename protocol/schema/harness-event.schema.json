@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://overwatch.dev/protocol/harness-event.schema.json",
+  "title": "HarnessEvent",
+  "description": "Two-tier discriminated union of events emitted by harness adapters back to the orchestrator. Tier 1 = canonical cross-provider events. Tier 2 = provider_event envelope for everything provider-specific. Adapters never silently drop wire events; anything that doesn't map to Tier 1 emits as Tier 2.",
+  "oneOf": [
+    { "$ref": "#/$defs/SessionInit" },
+    { "$ref": "#/$defs/TextDelta" },
+    { "$ref": "#/$defs/ReasoningDelta" },
+    { "$ref": "#/$defs/AssistantMessage" },
+    { "$ref": "#/$defs/ToolLifecycle" },
+    { "$ref": "#/$defs/SessionEnd" },
+    { "$ref": "#/$defs/ErrorEvent" },
+    { "$ref": "#/$defs/CancelConfirmed" },
+    { "$ref": "#/$defs/ProviderEvent" }
+  ],
+  "$defs": {
+    "Common": {
+      "type": "object",
+      "required": ["correlation_id", "target"],
+      "properties": {
+        "correlation_id": {
+          "type": "string",
+          "description": "ID of the turn this event belongs to. Set by the daemon when dispatching the originating command."
+        },
+        "target": {
+          "type": "string",
+          "description": "Harness target identifier, e.g. 'claude-code', 'pi', 'hermes'."
+        },
+        "raw": {
+          "description": "Verbatim wire payload from the harness, for debugging and the catch-all logger. Passthrough; not validated."
+        }
+      }
+    },
+    "SessionInit": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": { "const": "session_init" },
+            "session_id": { "type": "string" },
+            "tools": { "type": "array", "items": { "type": "string" } },
+            "model": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "TextDelta": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "required": ["type", "text"],
+          "properties": {
+            "type": { "const": "text_delta" },
+            "text": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "ReasoningDelta": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "required": ["type", "text"],
+          "properties": {
+            "type": { "const": "reasoning_delta" },
+            "text": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "AssistantMessage": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "required": ["type", "text"],
+          "properties": {
+            "type": { "const": "assistant_message" },
+            "text": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "ToolLifecycle": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "required": ["type", "phase", "name"],
+          "properties": {
+            "type": { "const": "tool_lifecycle" },
+            "phase": { "enum": ["start", "progress", "complete"] },
+            "name": { "type": "string" },
+            "tool_use_id": { "type": "string" },
+            "input": { "description": "Tool input (provider-specific shape)." },
+            "result": { "description": "Tool result (provider-specific shape). Only present when phase=='complete'." }
+          }
+        }
+      ]
+    },
+    "SessionEnd": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "required": ["type", "subtype"],
+          "properties": {
+            "type": { "const": "session_end" },
+            "subtype": { "enum": ["success", "error"] },
+            "result": { "type": "string" },
+            "cost_usd": { "type": "number" },
+            "usage": {
+              "type": "object",
+              "properties": {
+                "input": { "type": "integer" },
+                "output": { "type": "integer" }
+              },
+              "additionalProperties": true
+            }
+          }
+        }
+      ]
+    },
+    "ErrorEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "required": ["type", "message"],
+          "properties": {
+            "type": { "const": "error" },
+            "message": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "CancelConfirmed": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "required": ["type"],
+          "description": "Emitted by the daemon after the harness has acknowledged cancellation for the correlation_id. Required by the cancellation contract.",
+          "properties": {
+            "type": { "const": "cancel_confirmed" }
+          }
+        }
+      ]
+    },
+    "ProviderEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "required": ["type", "provider", "kind"],
+          "description": "Tier 2 passthrough envelope. Used for any wire event that doesn't map to a Tier 1 canonical event. Adapters MUST emit this rather than silently drop.",
+          "properties": {
+            "type": { "const": "provider_event" },
+            "provider": {
+              "type": "string",
+              "description": "Provider namespace, e.g. 'claude-code', 'hermes', 'pi', 'overwatch' for daemon-internal sources."
+            },
+            "kind": {
+              "type": "string",
+              "description": "Provider-scoped event kind. Combined with provider as 'provider/kind' for HARNESS_EVENT_CONFIGS lookup."
+            },
+            "payload": {
+              "description": "Provider-specific payload. Untyped at the protocol layer; consumers parse based on registry config.",
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

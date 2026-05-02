@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://overwatch.dev/protocol/harness-command.schema.json",
+  "title": "HarnessCommand",
+  "description": "Discriminated union of commands sent from the cloud orchestrator to the Mac session-host daemon. The daemon's command allowlist enforces that only these three kinds are accepted — anything else is rejected and audit-logged. Only user-initiated input (voice or typed) ever produces a submit_with_steer or cancel; background events route through the registry instead.",
+  "oneOf": [
+    { "$ref": "#/$defs/SubmitText" },
+    { "$ref": "#/$defs/SubmitWithSteer" },
+    { "$ref": "#/$defs/Cancel" }
+  ],
+  "$defs": {
+    "Common": {
+      "type": "object",
+      "required": ["correlation_id", "target"],
+      "properties": {
+        "correlation_id": {
+          "type": "string",
+          "description": "Unique ID for this turn. Events emitted while executing this command carry the same correlation_id."
+        },
+        "target": {
+          "type": "string",
+          "description": "Harness target, e.g. 'claude-code', 'pi', 'hermes'."
+        }
+      }
+    },
+    "SubmitText": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "required": ["kind", "payload"],
+          "description": "Submit a user message to the harness when it is idle. If the harness is busy, this command must be rejected by the daemon (the orchestrator should have used submit_with_steer).",
+          "properties": {
+            "kind": { "const": "submit_text" },
+            "payload": {
+              "type": "object",
+              "required": ["text"],
+              "additionalProperties": false,
+              "properties": {
+                "text": { "type": "string" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "SubmitWithSteer": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "required": ["kind", "payload"],
+          "description": "Atomically cancel an in-flight turn and submit a new user message. Daemon executes provider-specific cancel for cancels_correlation_id, awaits cancel_confirmed (2s timeout), then submits text. Only user input ever produces this command.",
+          "properties": {
+            "kind": { "const": "submit_with_steer" },
+            "payload": {
+              "type": "object",
+              "required": ["text", "cancels_correlation_id"],
+              "additionalProperties": false,
+              "properties": {
+                "text": { "type": "string" },
+                "cancels_correlation_id": {
+                  "type": "string",
+                  "description": "The in-flight turn this command preempts."
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Cancel": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "required": ["kind", "payload"],
+          "description": "Cancel an in-flight turn without submitting a replacement. Daemon executes provider-specific cancel and emits cancel_confirmed.",
+          "properties": {
+            "kind": { "const": "cancel" },
+            "payload": {
+              "type": "object",
+              "required": ["target_correlation_id"],
+              "additionalProperties": false,
+              "properties": {
+                "target_correlation_id": {
+                  "type": "string",
+                  "description": "The in-flight turn to cancel."
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -6,7 +6,8 @@
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./crypto": "./src/crypto.ts"
+    "./crypto": "./src/crypto.ts",
+    "./protocol": "./src/protocol/index.ts"
   },
   "dependencies": {
     "tweetnacl": "^1.0.3"
