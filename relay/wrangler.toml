@@ -19,9 +19,16 @@ head_sampling_rate = 1
 
 [durable_objects]
 bindings = [
-  { name = "ROOM", class_name = "Room" }
+  { name = "USER_CHANNEL", class_name = "UserChannel" }
 ]
 
+# Migration v1 created the legacy Room class.
+# Migration v2 deletes Room and creates UserChannel for the overhaul.
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]
+
+[[migrations]]
+tag = "v2"
+deleted_classes = ["Room"]
+new_sqlite_classes = ["UserChannel"]

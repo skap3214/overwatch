@@ -10,6 +10,7 @@ import {
   GATEWAY_LOG_PATH,
   LOG_DIR,
   getRunningGatewayPid,
+  loadOrCreatePairing,
   readGatewayStatus,
   type GatewayStatus,
 } from "../gateway-state.js";
@@ -108,22 +109,26 @@ function launchdTarget(): string {
   return `gui/${userInfo().uid}`;
 }
 
-function qrPayload(status: GatewayStatus): string {
-  // New pairing payload (voice-harness-bridge overhaul):
-  //   { r: relayUrl, u: userId, t: pairingToken }
-  // The phone scans this, derives a per-session HMAC token from the
-  // pairingToken, and uses it when calling /api/sessions/start on the relay.
-  // The legacy r/k/d shape is gone — phone no longer holds the host nacl
-  // public key directly; the orchestrator-mediated path uses HMAC tokens.
+function qrPayload(
+  status: GatewayStatus,
+  pairing: { userId: string; pairingToken: string },
+): string {
+  // Pairing payload for the voice/harness-bridge overhaul:
+  //   r = relay URL (the phone POSTs to /api/sessions/start here)
+  //   u = userId    (used by phone, daemon, and orchestrator to identify a channel)
+  //   t = pairingToken (long-term shared secret; phone derives a per-session HMAC)
   return JSON.stringify({
     r: status.relayUrl,
-    u: status.room, // alpha: room code doubles as the user identifier
-    t: status.hostPublicKey, // alpha: hostPublicKey doubles as the pairing token
+    u: pairing.userId,
+    t: pairing.pairingToken,
   });
 }
 
-function statusIsFresh(status: GatewayStatus | null, since: number): status is GatewayStatus {
-  if (!status?.room || !status.hostPublicKey) return false;
+function statusIsFresh(
+  status: GatewayStatus | null,
+  since: number,
+): status is GatewayStatus {
+  if (!status?.userId) return false;
   const updatedAt = Date.parse(status.updatedAt);
   return Number.isFinite(updatedAt) && updatedAt >= since - 1000;
 }
@@ -141,18 +146,29 @@ async function waitForGatewayInfo(since: number, timeoutMs = 10000): Promise<Gat
 export function printGatewayInfo(status = readGatewayStatus()): boolean {
   const pid = getRunningGatewayPid();
   console.log("");
-  if (!status?.room || !status.hostPublicKey) {
+  if (!status?.userId) {
     console.log(chalk.red("No gateway pairing information found yet."));
-    console.log(chalk.dim("Run `overwatch gateway start` first, then retry `overwatch gateway info`."));
+    console.log(
+      chalk.dim(
+        "Run `overwatch gateway start` first, then retry `overwatch gateway info`.",
+      ),
+    );
     console.log("");
     return false;
   }
 
   if (!pid) {
-    console.log(chalk.yellow("!") + " Gateway is not currently running; this pairing info may not be usable until it starts.");
+    console.log(
+      chalk.yellow("!") +
+        " Gateway is not currently running; this pairing info may not be usable until it starts.",
+    );
     console.log("");
   }
-  printPairingDetails(status.room, qrPayload(status));
+
+  // Read the persisted pairing token from disk so we can construct a fresh QR
+  // even when only the status is loaded.
+  const pairing = loadOrCreatePairing();
+  printPairingDetails(pairing.userId, qrPayload(status, pairing));
   console.log(chalk.dim(`Relay: ${status.relayUrl}`));
   console.log(chalk.dim(`Status updated: ${status.updatedAt}`));
   console.log("");
@@ -221,10 +237,16 @@ function printGatewayStatus(): void {
   console.log(`  Gateway:  ${pid ? chalk.green(`running (PID ${pid})`) : chalk.red("not running")}`);
   console.log(`  Service:  ${serviceInstalled ? chalk.green("installed") : chalk.dim("not installed")}`);
   if (status) {
-    console.log(`  Relay:    ${status.relayConnected ? chalk.green("connected") : chalk.yellow("reconnecting")} (${status.relayUrl})`);
-    console.log(`  Backend:  ${status.backendConnected ? chalk.green("connected") : chalk.yellow("reconnecting")} (localhost:${status.backendPort})`);
-    console.log(`  Phone:    ${status.phoneConnected ? chalk.green("connected") : chalk.dim("not connected")}`);
-    console.log(`  Room:     ${chalk.bold(status.room)}`);
+    console.log(
+      `  Relay:    ${status.daemonRelayConnected ? chalk.green("connected") : chalk.yellow("reconnecting")} (${status.relayUrl})`,
+    );
+    console.log(
+      `  Daemon:   ${chalk.green("running")} (localhost:${status.backendPort})`,
+    );
+    console.log(
+      `  Cloud:    ${status.orchestratorConnected ? chalk.green("connected") : chalk.dim("idle")}`,
+    );
+    console.log(`  User ID:  ${chalk.bold(status.userId)}`);
     console.log(`  Updated:  ${chalk.dim(status.updatedAt)}`);
     if (status.lastEvent) console.log(`  Event:    ${status.lastEvent}`);
     if (status.lastError) console.log(`  Error:    ${chalk.red(status.lastError)}`);

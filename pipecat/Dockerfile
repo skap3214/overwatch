@@ -12,7 +12,7 @@ FROM dailyco/pipecat-base:latest
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
-# Build ID: 2026-05-02-v4
+# Build ID: 2026-05-02-v5-userchannel
 
 # Install the project's dependencies using the lockfile.
 RUN --mount=type=cache,target=/root/.cache/uv \

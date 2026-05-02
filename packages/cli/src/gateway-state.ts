@@ -1,3 +1,16 @@
+/**
+ * Gateway state — owns the daemon's pairing identity and runtime status file.
+ *
+ * Schema for the voice/harness-bridge overhaul:
+ *   - userId:        long-lived identifier; the relay's UserChannel keys on this
+ *   - pairingToken:  shared between phone, daemon, and orchestrator
+ *   - relayUrl:      the relay endpoint (defaults to the hosted alpha worker)
+ *
+ * The legacy {room, hostPublicKey} schema is gone. Phone never connects to
+ * the relay's WS; it hits POST /api/sessions/start instead, then WebRTC to
+ * a Daily room. Daemon and orchestrator talk through /api/users/:userId/ws/*.
+ */
+
 import {
   existsSync,
   mkdirSync,
@@ -8,37 +21,35 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { generateKeyPair, fromBase64, toBase64, type KeyPair } from "./crypto.js";
+import { randomBytes } from "node:crypto";
 
 export interface GatewayStatus {
   pid: number;
   startedAt: string;
   updatedAt: string;
   relayUrl: string;
-  room: string;
-  hostPublicKey: string;
+  userId: string;
+  /** Daemon's local API port (mobile UI for monitor/tmux REST shims). */
   backendPort: number;
-  backendConnected: boolean;
-  relayConnected: boolean;
-  phoneConnected: boolean;
+  /** True if the daemon is connected to the relay's UserChannel as host. */
+  daemonRelayConnected: boolean;
+  /** True if the orchestrator is currently connected on the same channel. */
+  orchestratorConnected: boolean;
   lastEvent?: string;
   lastError?: string;
 }
 
-interface HostIdentityFile {
-  publicKey: string;
-  secretKey: string;
-}
-
 interface PairingFile {
-  room: string;
+  userId: string;
+  pairingToken: string;
   createdAt: string;
 }
+
+export const DEFAULT_RELAY_URL = "https://overwatch-relay.soami.workers.dev";
 
 export const GATEWAY_DIR = join(homedir(), ".overwatch");
 export const PID_PATH = join(GATEWAY_DIR, "gateway.pid");
 export const STATUS_PATH = join(GATEWAY_DIR, "gateway-status.json");
-export const HOST_IDENTITY_PATH = join(GATEWAY_DIR, "host-key.json");
 export const PAIRING_PATH = join(GATEWAY_DIR, "pairing.json");
 export const LOG_DIR = join(GATEWAY_DIR, "logs");
 export const GATEWAY_LOG_PATH = join(LOG_DIR, "gateway.log");
@@ -81,14 +92,20 @@ export function writePidFile(): void {
   ensureGatewayDirs();
   writeFileSync(
     PID_PATH,
-    JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }, null, 2),
-    "utf-8"
+    JSON.stringify(
+      { pid: process.pid, startedAt: new Date().toISOString() },
+      null,
+      2,
+    ),
+    "utf-8",
   );
   chmodSync(PID_PATH, 0o600);
 }
 
 export function removePidFile(): void {
-  try { unlinkSync(PID_PATH); } catch {}
+  try {
+    unlinkSync(PID_PATH);
+  } catch {}
 }
 
 export function readGatewayStatus(): GatewayStatus | null {
@@ -99,66 +116,53 @@ export function writeGatewayStatus(status: GatewayStatus): void {
   ensureGatewayDirs();
   writeFileSync(
     STATUS_PATH,
-    JSON.stringify({ ...status, updatedAt: new Date().toISOString() }, null, 2),
-    "utf-8"
+    JSON.stringify(
+      { ...status, updatedAt: new Date().toISOString() },
+      null,
+      2,
+    ),
+    "utf-8",
   );
   chmodSync(STATUS_PATH, 0o600);
 }
 
-export function loadOrCreateHostIdentity(): KeyPair {
-  ensureGatewayDirs();
-  const existing = readJson<HostIdentityFile>(HOST_IDENTITY_PATH);
-  if (existing?.publicKey && existing.secretKey) {
-    return {
-      publicKey: fromBase64(existing.publicKey),
-      secretKey: fromBase64(existing.secretKey),
-    };
-  }
-
-  const keyPair = generateKeyPair();
-  writeFileSync(
-    HOST_IDENTITY_PATH,
-    JSON.stringify(
-      {
-        publicKey: toBase64(keyPair.publicKey),
-        secretKey: toBase64(keyPair.secretKey),
-      },
-      null,
-      2
-    ),
-    "utf-8"
-  );
-  chmodSync(HOST_IDENTITY_PATH, 0o600);
-  return keyPair;
-}
-
-function generateRoomCode(): string {
-  const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-  const digits = "23456789";
-  let prefix = "";
-  let suffix = "";
-  for (let i = 0; i < 4; i++) prefix += letters[Math.floor(Math.random() * letters.length)];
-  for (let i = 0; i < 4; i++) suffix += digits[Math.floor(Math.random() * digits.length)];
-  return `${prefix}-${suffix}`;
-}
-
-export function loadOrCreatePairingRoom(): string {
+/**
+ * Load the daemon's pairing identity, generating a fresh one on first run.
+ * The userId is a friendly base32-ish handle; the pairing token is a 256-bit
+ * URL-safe random string.
+ */
+export function loadOrCreatePairing(): PairingFile {
   ensureGatewayDirs();
   const existing = readJson<PairingFile>(PAIRING_PATH);
-  if (existing?.room && /^[A-Z0-9]+-[A-Z0-9]+$/.test(existing.room)) {
-    return existing.room;
-  }
+  if (existing?.userId && existing.pairingToken) return existing;
 
-  const room = generateRoomCode();
-  writeFileSync(
-    PAIRING_PATH,
-    JSON.stringify({ room, createdAt: new Date().toISOString() }, null, 2),
-    "utf-8"
-  );
+  const fresh: PairingFile = {
+    userId: generateUserId(),
+    pairingToken: generatePairingToken(),
+    createdAt: new Date().toISOString(),
+  };
+  writeFileSync(PAIRING_PATH, JSON.stringify(fresh, null, 2), "utf-8");
   chmodSync(PAIRING_PATH, 0o600);
-  return room;
+  return fresh;
 }
 
-export function createEphemeralRoom(): string {
-  return generateRoomCode();
+function generateUserId(): string {
+  // Friendly readable form: USER-XXXX-XXXX (24 bits of entropy).
+  const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const digits = "23456789";
+  const pickFrom = (alphabet: string, n: number) =>
+    Array.from(
+      { length: n },
+      () => alphabet[Math.floor(Math.random() * alphabet.length)],
+    ).join("");
+  return `USER-${pickFrom(letters, 4)}-${pickFrom(digits, 4)}`;
+}
+
+function generatePairingToken(): string {
+  // 256 bits of entropy, URL-safe base64.
+  return randomBytes(32)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 }

@@ -92,11 +92,19 @@ export class AdapterProtocolServer {
 
   private connect(): void {
     if (this.stopped) return;
-    const url = this.opts.deps.relayUrl;
-    if (!url) {
-      console.warn("[adapter-protocol] no RELAY_URL configured; skipping connect");
+    const { relayUrl, userId, pairingToken } = this.opts.deps;
+    if (!relayUrl || !userId || !pairingToken) {
+      console.warn(
+        "[adapter-protocol] missing relayUrl/userId/pairingToken; skipping connect",
+      );
       return;
     }
+
+    const wsBase = relayUrl
+      .replace(/^https:\/\//, "wss://")
+      .replace(/^http:\/\//, "ws://")
+      .replace(/\/+$/, "");
+    const url = `${wsBase}/api/users/${encodeURIComponent(userId)}/ws/host?token=${encodeURIComponent(pairingToken)}`;
 
     try {
       this.socket = new WebSocketCtor(url);

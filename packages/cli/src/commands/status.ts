@@ -87,19 +87,25 @@ export async function statusCommand(): Promise<void> {
   console.log(
     `  Gateway:  ${gatewayPid ? chalk.green(`running (PID ${gatewayPid})`) : chalk.red("not running")}`
   );
-  if (gatewayStatus?.room) {
+  if (gatewayStatus?.userId) {
+    const cloud = gatewayStatus.orchestratorConnected
+      ? chalk.green("connected")
+      : chalk.dim("idle");
+    const daemon = gatewayStatus.daemonRelayConnected
+      ? chalk.green("connected")
+      : chalk.yellow("offline");
     console.log(
-      `  Pairing:  room ${chalk.bold(gatewayStatus.room)} · phone ${gatewayStatus.phoneConnected ? chalk.green("connected") : chalk.dim("not connected")}`
+      `  Pairing:  user ${chalk.bold(gatewayStatus.userId)} · daemon ${daemon} · cloud ${cloud}`,
     );
   }
   console.log(
     `  Agent:    ${agentConfigured ? chalk.green("configured") : chalk.red("not set")}`
   );
-  console.log(`  Deepgram: ${config.deepgramApiKey ? chalk.green("configured") : chalk.red("not set")} (STT + TTS)`);
-  console.log(`  STT:      ${config.sttProvider ?? "deepgram"}${config.sttModel ? chalk.dim(` (${config.sttModel})`) : ""}`);
-  console.log(`  TTS:      ${config.ttsProvider ?? "deepgram"}${config.ttsModel ? chalk.dim(` (${config.ttsModel})`) : ""}`);
   console.log(
-    `  Terminal: ${terminalConfigured ? chalk.green("configured") : chalk.red("not set")} (tmux auto-start)`
+    `  Voice:    ${chalk.dim("cloud orchestrator (pipecat) — Deepgram + Cartesia handled cloud-side")}`,
+  );
+  console.log(
+    `  Terminal: ${terminalConfigured ? chalk.green("configured") : chalk.red("not set")} (tmux auto-start)`,
   );
   console.log("");
 }

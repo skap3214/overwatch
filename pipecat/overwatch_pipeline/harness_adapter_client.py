@@ -36,19 +36,32 @@ class HarnessAdapterClient(Protocol):
 
 
 class RelayClient:
-    """Routes through CF Workers relay to user's Mac daemon.
+    """Routes through the CF Workers relay's UserChannel to the user's Mac daemon.
 
-    Carries per-user + per-session tokens on every command. Maintains a single
-    WebSocket connection; reconnects with backoff on disconnect.
+    Connects to `wss://<relay>/api/users/<user_id>/ws/orchestrator?token=<pairing>`.
+    The daemon connects to the matching `ws/host` endpoint. The UserChannel
+    durable object routes JSON envelopes between the two roles.
+
+    Maintains a single connection with backoff reconnect.
     """
 
     def __init__(
         self,
+        *,
         relay_url: str,
+        user_id: str,
+        pairing_token: str,
         session_token: str,
         reconnect_delay: float = 2.0,
     ) -> None:
-        self._url = relay_url
+        # Convert https:// to wss:// (and http:// to ws://) so the relay's
+        # CF Worker can complete the WebSocket upgrade.
+        ws_base = relay_url.replace("https://", "wss://").replace("http://", "ws://")
+        self._url = (
+            f"{ws_base.rstrip('/')}/api/users/{user_id}/ws/orchestrator"
+            f"?token={pairing_token}"
+        )
+        self._user_id = user_id
         self._session_token = session_token
         self._reconnect_delay = reconnect_delay
         self._socket: websockets.ClientConnection | None = None

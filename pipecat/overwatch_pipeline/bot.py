@@ -66,7 +66,11 @@ async def bot(runner_args) -> None:  # noqa: ANN001
 
     # Body shape from /api/sessions/start: { user_id, pairing_token }.
     body = runner_args.body or {}
-    target = (body.get("default_target") if isinstance(body, dict) else None) or "claude-code"
+    if not isinstance(body, dict):
+        body = {}
+    user_id = body.get("user_id") or "alpha"
+    pairing_token = body.get("pairing_token") or settings.session_token_secret
+    target = body.get("default_target") or "claude-code"
 
     transport = DailyTransport(
         runner_args.room_url,
@@ -100,6 +104,8 @@ async def bot(runner_args) -> None:  # noqa: ANN001
 
     adapter_client: HarnessAdapterClient = RelayClient(
         relay_url=settings.relay_url,
+        user_id=user_id,
+        pairing_token=pairing_token,
         session_token=settings.session_token_secret,
     )
     await adapter_client.connect()  # type: ignore[union-attr]

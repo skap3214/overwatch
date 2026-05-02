@@ -19,7 +19,8 @@ const envSchema = z.object({
   HERMES_SKILL_NAME: z.string().default("overwatch"),
 
   // Adapter-protocol — outbound connection to the cloud orchestrator via the relay.
-  RELAY_URL: z.string().default("ws://127.0.0.1:8788"),
+  RELAY_URL: z.string().default("https://overwatch-relay.soami.workers.dev"),
+  OVERWATCH_USER_ID: z.string().default(""),
   ORCHESTRATOR_PAIRING_TOKEN: z.string().default(""),
   ORCHESTRATOR_URL: z.string().default(""),
 

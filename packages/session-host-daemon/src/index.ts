@@ -195,6 +195,7 @@ void server;
 const adapterServer = new AdapterProtocolServer({
   deps: {
     relayUrl: config.RELAY_URL,
+    userId: config.OVERWATCH_USER_ID,
     pairingToken: config.ORCHESTRATOR_PAIRING_TOKEN,
     sessionTokenSecret: config.ORCHESTRATOR_PAIRING_TOKEN,
     auditLogPath: config.AUDIT_LOG_PATH,
@@ -203,12 +204,14 @@ const adapterServer = new AdapterProtocolServer({
   harnesses,
 });
 
-if (config.ORCHESTRATOR_PAIRING_TOKEN) {
+if (config.OVERWATCH_USER_ID && config.ORCHESTRATOR_PAIRING_TOKEN) {
   adapterServer.start();
-  console.log(`[adapter-protocol] connecting to ${config.RELAY_URL}`);
+  console.log(
+    `[adapter-protocol] connecting to ${config.RELAY_URL} as user ${config.OVERWATCH_USER_ID}`,
+  );
 } else {
   console.warn(
-    "[adapter-protocol] ORCHESTRATOR_PAIRING_TOKEN not set; daemon will not connect to cloud orchestrator. Run `overwatch setup` to pair.",
+    "[adapter-protocol] OVERWATCH_USER_ID/ORCHESTRATOR_PAIRING_TOKEN not set; daemon will not connect to cloud orchestrator. Run `overwatch setup` to pair.",
   );
 }
 

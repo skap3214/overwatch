@@ -14,9 +14,11 @@ import type {
 export type { HarnessCommand, HarnessEvent, SubmitText, SubmitWithSteer, Cancel };
 
 export interface AdapterProtocolDeps {
-  /** Relay URL the daemon connects to. */
+  /** Relay URL the daemon connects to (e.g. https://overwatch-relay.soami.workers.dev). */
   relayUrl: string;
-  /** Token from `overwatch setup`, identifies this user. */
+  /** User identity bootstrapped at QR-pair time. */
+  userId: string;
+  /** Long-term pairing token shared with phone + orchestrator. */
   pairingToken: string;
   /** Per-user secret used to verify orchestrator-signed per-session tokens. */
   sessionTokenSecret: string;
