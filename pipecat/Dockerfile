@@ -1,29 +1,25 @@
 # Pipecat Cloud deploy artifact for the Overwatch orchestrator.
 #
-# Build:    docker build -t overwatch-orchestrator -f Dockerfile .
-# Deploy:   pcc agent deploy
+# Uses the official dailyco/pipecat-base image which:
+#   - Provides the runtime that imports your bot.py and calls bot(runner_args)
+#   - Wires the health check and shutdown signals Pipecat Cloud expects
+#   - Runs the FastAPI server pipecat.runner.run sets up
 #
-# Pipecat Cloud expects a Python image with the pipeline as the entrypoint.
+# See: https://github.com/pipecat-ai/docs/blob/main/pipecat-cloud/fundamentals/agent-images.mdx
 
-FROM python:3.12-slim
+FROM dailyco/pipecat-base:latest
 
-# Build ID: 2026-05-02-v3
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    UV_LINK_MODE=copy \
-    UV_NO_CACHE=1
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
-# uv is the package manager for the project.
-COPY --from=ghcr.io/astral-sh/uv:0.5 /uv /uvx /usr/local/bin/
+# Build ID: 2026-05-02-v4
 
-WORKDIR /app
+# Install the project's dependencies using the lockfile.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --locked --no-install-project --no-dev
 
-# Install dependencies first for layer caching.
-COPY pyproject.toml uv.lock* ./
-RUN uv sync --frozen --no-install-project
-
-# Copy the pipeline source.
-COPY overwatch_pipeline/ ./overwatch_pipeline/
-
-# Pipecat Cloud invokes `python -m overwatch_pipeline.bot` per pcc-deploy.toml.
-CMD ["uv", "run", "python", "-m", "overwatch_pipeline.bot"]
+# Copy the bot entry + the orchestrator package.
+COPY ./bot.py bot.py
+COPY ./overwatch_pipeline ./overwatch_pipeline
