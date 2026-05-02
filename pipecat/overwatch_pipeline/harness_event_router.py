@@ -39,8 +39,10 @@ class HarnessRouterProcessor(FrameProcessor):
 
     async def _dispatch(self, frame: HarnessEventFrame) -> None:
         # The .root of the RootModel is the actual variant.
+        # mode="json" ensures Enum fields (like ToolLifecycle.phase) serialize
+        # to plain strings so the registry's "tool_lifecycle:start" lookup works.
         root = frame.event.root
-        event_dict = root.model_dump()
+        event_dict = root.model_dump(mode="json")
         cfg = lookup_config(event_dict, default_mode=self._default_mode)
 
         action = cfg.voice_action
@@ -84,14 +86,38 @@ class HarnessRouterProcessor(FrameProcessor):
 
     @staticmethod
     def _extract_text(event: dict) -> str:
-        """Pull a speakable / injectable text representation from the event."""
-        for key in ("text", "message", "result"):
+        """Pull a speakable / injectable text representation from the event.
+
+        Resolution order:
+        1. Top-level text/message string fields.
+        2. tool_lifecycle phases get synthesized phrases.
+        3. provider_event payload.message or payload.text.
+        4. Top-level result if it's a string.
+        """
+        for key in ("text", "message"):
             value = event.get(key)
             if isinstance(value, str) and value.strip():
                 return value
+
         if event.get("type") == "tool_lifecycle":
             phase = event.get("phase", "")
-            name = event.get("name", "")
+            name = event.get("name", "tool")
             if phase == "start":
-                return f"Running {name}." if name else "Running tool."
+                return f"Running {name}."
+            if phase == "complete":
+                return f"{name} completed."
+            return ""
+
+        if event.get("type") == "provider_event":
+            payload = event.get("payload") or {}
+            if isinstance(payload, dict):
+                for key in ("message", "text"):
+                    value = payload.get(key)
+                    if isinstance(value, str) and value.strip():
+                        return value
+
+        result = event.get("result")
+        if isinstance(result, str) and result.strip():
+            return result
+
         return ""

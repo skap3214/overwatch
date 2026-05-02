@@ -31,7 +31,12 @@ Your responses are spoken aloud via text-to-speech. Follow these rules strictly:
  * Critical invariant: every wire-event path is covered. Anything that does not
  * map to a Tier-1 canonical event is emitted as a `provider_event` so the
  * cloud orchestrator's catch-all logger can see it. Nothing is silently dropped.
+ *
+ * Exported under `mapClaudeJsonLineForTest` (test-only) so unit tests can
+ * exercise the mapping without spawning a subprocess.
  */
+export { mapClaudeJsonLine as mapClaudeJsonLineForTest };
+
 function mapClaudeJsonLine(parsed: Record<string, unknown>): AdapterEvent[] {
   const type = typeof parsed.type === "string" ? parsed.type : undefined;
   if (!type) return [];

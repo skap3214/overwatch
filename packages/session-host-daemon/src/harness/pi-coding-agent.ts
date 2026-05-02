@@ -195,7 +195,12 @@ export class PiCodingAgentHarness implements OrchestratorHarness {
  * Tier-1 maps for the canonical event shapes; Tier-2 provider_event passthrough
  * for everything else (thinking deltas, tool_use_start, tool_execution_end,
  * extension events, etc.).
+ *
+ * Exported under `mapPiEventForTest` so unit tests can exercise the mapping
+ * without spinning up a real Pi session.
  */
+export { mapPiEvent as mapPiEventForTest };
+
 function mapPiEvent(event: any): AdapterEvent[] {
   const type = event?.type;
   if (typeof type !== "string") return [];
