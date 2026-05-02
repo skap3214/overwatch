@@ -53,15 +53,18 @@ async def bot(runner_args) -> None:  # noqa: ANN001
     from pipecat.pipeline.task import PipelineParams, PipelineTask
     from pipecat.runner.types import DailyRunnerArguments
     from pipecat.services.cartesia.tts import CartesiaTTSService
-    from pipecat.services.deepgram.stt import DeepgramSTTService
+    from pipecat.services.deepgram.stt import DeepgramSTTService, DeepgramSTTSettings
     from pipecat.transports.daily.transport import DailyParams, DailyTransport
 
     settings = load()
     _setup_observability(settings)
 
-    if not isinstance(runner_args, DailyRunnerArguments):
+    if not isinstance(runner_args, DailyRunnerArguments) and not (
+        hasattr(runner_args, "room_url") and hasattr(runner_args, "token")
+    ):
         raise RuntimeError(
-            f"overwatch-orchestrator requires Daily runner args; got {type(runner_args).__name__}"
+            f"overwatch-orchestrator requires Daily-style runner args; got "
+            f"{type(runner_args).__name__}"
         )
 
     # Body shape from /api/sessions/start: { user_id, pairing_token }.
@@ -85,7 +88,10 @@ async def bot(runner_args) -> None:  # noqa: ANN001
 
     stt = DeepgramSTTService(
         api_key=settings.deepgram_api_key,
-        live_options={"model": "nova-3", "interim_results": True},
+        settings=DeepgramSTTSettings(
+            model="nova-3",
+            interim_results=True,
+        ),
     )
 
     tts = CartesiaTTSService(
