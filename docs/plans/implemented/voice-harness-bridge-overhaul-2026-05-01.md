@@ -1,12 +1,11 @@
 # Plan: Voice Pipeline + Harness Bridge Overhaul
 
 **Date:** 2026-05-01
-**Status:** Proposed
-**Branch model:** Clean overhaul branch (`overhaul/voice-harness-bridge`). No runtime backward compatibility with the current WS audio path. Rollback is `git checkout main`, not a feature flag.
+**Status:** Implemented (2026-05-02)
+**Branch model:** Was developed on `overhaul/voice-harness-bridge`; merged to `main` and that branch has been deleted.
 **Distribution scope:** Private alpha. Soami + ~3–5 trusted testers. One hosted orchestrator environment we operate. No public open-signup, no billing, no accounts. OSS code remains public; BYOK and self-host (Y2) paths are documented as future plans only.
-**Related Research:** [../research/voice-pipeline-pipecat-gradient-bang-2026-05-01.md](../research/voice-pipeline-pipecat-gradient-bang-2026-05-01.md)
-**Related Architecture:** [../architecture/004-harness-pluggability.md](../architecture/004-harness-pluggability.md), [../architecture/006-overwatch-hermes-plugin.md](../architecture/006-overwatch-hermes-plugin.md), [../architecture/003-gateway-service.md](../architecture/003-gateway-service.md)
-**Supersedes:** [pipecat-voice-mode-2026-04-09.md](./pipecat-voice-mode-2026-04-09.md) (the earlier plan ran the pipecat pipeline on the user's Mac; this plan moves it to Pipecat Cloud and reframes the orchestrator boundary)
+**Implemented architecture:** [../../architecture/007-post-overhaul-architecture.md](../../architecture/007-post-overhaul-architecture.md), [../../architecture/008-protocol-and-codegen.md](../../architecture/008-protocol-and-codegen.md), [../../architecture/009-auth-pairing-and-tokens.md](../../architecture/009-auth-pairing-and-tokens.md)
+**Related Research:** [../../research/voice-pipeline-pipecat-gradient-bang-2026-05-01.md](../../research/voice-pipeline-pipecat-gradient-bang-2026-05-01.md)
 
 ---
 

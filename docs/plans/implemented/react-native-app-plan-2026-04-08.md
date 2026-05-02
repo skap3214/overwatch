@@ -1,9 +1,7 @@
 # Plan: Overwatch React Native iOS App
 
 **Date:** 2026-04-08
-**Status:** Proposed
-**Supersedes:** [ios-app-plan-2026-04-08.md](ios-app-plan-2026-04-08.md) (Swift version, abandoned)
-**Related Docs:** [../architecture/002-product-vision.md](../architecture/002-product-vision.md), [../architecture/001-backend-architecture.md](../architecture/001-backend-architecture.md)
+**Status:** Implemented (the RN/Expo app shipped; the realtime client was later swapped to the Pipecat RN client + Daily transport in the 2026-05-02 overhaul — see [../../architecture/007-post-overhaul-architecture.md](../../architecture/007-post-overhaul-architecture.md))
 **Reuses code from:** `/Users/soami/Desktop/code/yl/workspace-trees/workspace-3/frontend/apps/mobile-app`
 
 ## Outcome

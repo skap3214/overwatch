@@ -1,11 +1,9 @@
 # Plan: Hermes Gateway Integration
 
 **Date:** 2026-04-22
-**Status:** Proposed
-**Related Docs:** [../architecture/001-backend-architecture.md](../architecture/001-backend-architecture.md), [../architecture/002-product-vision.md](../architecture/002-product-vision.md), [cli-and-relay-plan-2026-04-09.md](cli-and-relay-plan-2026-04-09.md), [react-native-app-plan-2026-04-08.md](react-native-app-plan-2026-04-08.md)
+**Status:** Implemented (Hermes provider, jobs/skills bridges, webhook are live in the daemon; tmux plugin surface was retired — Hermes agents use normal shell `tmux` access)
+**Related Architecture:** [../../architecture/004-harness-pluggability.md](../../architecture/004-harness-pluggability.md), [../../architecture/005-hermes-bridge.md](../../architecture/005-hermes-bridge.md)
 **Reference:** [Hermes Agent (Nous Research)](https://github.com/NousResearch/hermes-agent), [API Server docs](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server)
-
-**Update (2026-04-30):** The Hermes harness, jobs bridge, skills bridge, and voice routing remain implemented, but the proposed Overwatch Hermes plugin tool surface has been retired. Hermes agents should use normal shell `tmux` access instead of Overwatch-provided `tmux_*` tools. See [../architecture/006-overwatch-hermes-plugin.md](../architecture/006-overwatch-hermes-plugin.md).
 
 ## Outcome
 

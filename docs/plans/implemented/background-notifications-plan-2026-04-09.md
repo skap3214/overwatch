@@ -1,8 +1,7 @@
 # Background Notifications Plan
 
 **Date:** 2026-04-09
-**Status:** Partially Implemented
-**Related Docs:** [../architecture/001-backend-architecture.md](../architecture/001-backend-architecture.md), [../architecture/002-product-vision.md](../architecture/002-product-vision.md), [../plans/pipecat-voice-mode-2026-04-09.md](../plans/pipecat-voice-mode-2026-04-09.md), [../insights.md](../insights.md)
+**Status:** Implemented (notification store + scheduler bridges are live in the daemon; the daemon now emits scheduled-task notifications as `provider_event(overwatch/notification)` so the orchestrator routes them to TTS via `HARNESS_EVENT_CONFIGS` — see [../../architecture/007-post-overhaul-architecture.md](../../architecture/007-post-overhaul-architecture.md))
 
 ## Goal
 

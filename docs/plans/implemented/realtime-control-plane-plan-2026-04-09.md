@@ -1,8 +1,8 @@
 # Realtime Control Plane Plan
 
 **Date:** 2026-04-09
-**Status:** Partially Implemented
-**Related Docs:** [../architecture/001-backend-architecture.md](../architecture/001-backend-architecture.md), [../architecture/002-product-vision.md](../architecture/002-product-vision.md), [background-notifications-plan-2026-04-09.md](background-notifications-plan-2026-04-09.md), [pipecat-voice-mode-2026-04-09.md](pipecat-voice-mode-2026-04-09.md), [../insights.md](../insights.md)
+**Status:** Implemented and superseded — the Mac-side realtime socket described here was replaced by the Pipecat Cloud orchestrator + relay UserChannel + daemon adapter-protocol in the 2026-05-02 overhaul. Kept as historical context; the current control plane is in [../../architecture/007-post-overhaul-architecture.md](../../architecture/007-post-overhaul-architecture.md).
+**Related Docs:** [background-notifications-plan-2026-04-09.md](background-notifications-plan-2026-04-09.md), [../../insights.md](../../insights.md)
 
 ## Goal
 

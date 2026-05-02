@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-08
 **Status:** Deferred
-**Related Docs:** [../insights.md](../insights.md), [../architecture/001-backend-architecture.md](../architecture/001-backend-architecture.md)
+**Related Docs:** [../insights.md](../insights.md), [../architecture/007-post-overhaul-architecture.md](../architecture/007-post-overhaul-architecture.md)
 
 The earlier supervision-tracker direction has been deferred.
 

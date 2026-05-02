@@ -1,12 +1,8 @@
 # Plan: Overwatch CLI + Relay Server
 
 **Date:** 2026-04-09
-**Status:** Proposed
-**Related Docs:** [../architecture/002-product-vision.md](../architecture/002-product-vision.md), [react-native-app-plan-2026-04-08.md](react-native-app-plan-2026-04-08.md), [background-notifications-plan-2026-04-09.md](background-notifications-plan-2026-04-09.md)
+**Status:** Implemented (CLI + relay live; relay was rewritten in the 2026-05-02 overhaul to drop the Mac voice path and become a session-mint + UserChannel router — see [../../architecture/007-post-overhaul-architecture.md](../../architecture/007-post-overhaul-architecture.md))
 **Inspiration:** [Happy CLI relay architecture](https://happy.engineering/docs/how-it-works/)
-**Update 2026-04-30:** The implemented CLI surface is now leaner than this proposal: `overwatch sessions` was removed, `overwatch start` is an alias for `overwatch gateway start`, foreground gateway mode is hidden/internal only, setup no longer accepts `--gateway`, `overwatch gateway info` reprints pairing details, and `overwatch update` handles installed CLI updates.
-**Amends:** [react-native-app-plan-2026-04-08.md](react-native-app-plan-2026-04-08.md) — the mobile client is now WebSocket-first. The backend has already been refactored: `/api/v1/voice-turn` and `/api/v1/text-turn` are removed, turns go through the WebSocket, notifications also go through the WebSocket, and the remaining HTTP endpoints are `/api/v1/stt` and `/health`.
-**Overrides insight:** [../insights.md](../insights.md) line about keeping STT upload separate from the control socket. In relay mode, there is no HTTP path to the Mac, so STT audio must flow through the WebSocket as `voice.audio` envelopes. In direct mode, the app may still use the HTTP STT endpoint.
 
 ## Outcome
 

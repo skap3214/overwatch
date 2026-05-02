@@ -1,8 +1,8 @@
 # Initial Research: Halo-2 Reuse, tmux Surface, and MVP Direction
 
 **Date:** 2026-04-05
-**Status:** Current
-**Related Docs:** [../plans/mvp-plan-2026-04-05.md](../plans/mvp-plan-2026-04-05.md)
+**Status:** Historical (the MVP it scoped has shipped and been substantially rewritten in the 2026-05-02 overhaul)
+**Related Docs:** [../plans/implemented/mvp-plan-2026-04-05.md](../plans/implemented/mvp-plan-2026-04-05.md), [../architecture/007-post-overhaul-architecture.md](../architecture/007-post-overhaul-architecture.md)
 
 ## Goal
 
