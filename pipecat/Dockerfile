@@ -7,7 +7,7 @@
 
 FROM python:3.12-slim
 
-# Build ID: 2026-05-02-v2
+# Build ID: 2026-05-02-v3
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy \
