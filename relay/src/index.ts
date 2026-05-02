@@ -118,7 +118,7 @@ export default {
       const agentName = env.PIPECAT_AGENT_NAME ?? "overwatch-orchestrator";
 
       try {
-        const pccRes = await fetch(`${apiBase}/agents/${agentName}/start`, {
+        const pccRes = await fetch(`${apiBase}/public/${agentName}/start`, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${env.PIPECAT_PUBLIC_KEY}`,

@@ -3,7 +3,9 @@ secret_set = "overwatch"
 region = "us-west"
 
 [scaling]
-min_agents = 0
+# Keep one warm instance so Pipecat Cloud validation completes and so the
+# first session doesn't pay the full cold-start tax.
+min_agents = 1
 max_agents = 4
 
 [build]

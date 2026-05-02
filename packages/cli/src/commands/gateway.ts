@@ -5,7 +5,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import chalk from "chalk";
-import { loadConfig } from "../config.js";
 import {
   ERROR_LOG_PATH,
   GATEWAY_LOG_PATH,
@@ -110,11 +109,16 @@ function launchdTarget(): string {
 }
 
 function qrPayload(status: GatewayStatus): string {
-  const config = loadConfig();
+  // New pairing payload (voice-harness-bridge overhaul):
+  //   { r: relayUrl, u: userId, t: pairingToken }
+  // The phone scans this, derives a per-session HMAC token from the
+  // pairingToken, and uses it when calling /api/sessions/start on the relay.
+  // The legacy r/k/d shape is gone — phone no longer holds the host nacl
+  // public key directly; the orchestrator-mediated path uses HMAC tokens.
   return JSON.stringify({
-    r: status.room,
-    k: status.hostPublicKey,
-    ...(config.deepgramApiKey && { d: config.deepgramApiKey }),
+    r: status.relayUrl,
+    u: status.room, // alpha: room code doubles as the user identifier
+    t: status.hostPublicKey, // alpha: hostPublicKey doubles as the pairing token
   });
 }
 
