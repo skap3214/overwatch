@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 from pipecat.frames.frames import (
     Frame,
+    StartFrame,
     TranscriptionFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
@@ -29,11 +30,16 @@ from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from .frames import HarnessEventFrame, UserTextInputFrame
 from .protocol import (
     Cancel,
-    HarnessCommand,
     HarnessEvent,
     SubmitText,
     SubmitWithSteer,
 )
+from .protocol.generated.harness_command_schema import Payload, Payload1, Payload2
+
+# Concrete variants of HarnessCommand. The HarnessCommand RootModel is only
+# useful for receive-side discriminated-union validation; on the send side we
+# construct one variant directly.
+HarnessCommandVariant = SubmitText | SubmitWithSteer | Cancel
 
 if TYPE_CHECKING:
     from .deferred_update_buffer import DeferredUpdateBuffer
@@ -49,9 +55,9 @@ class HarnessBridgeProcessor(FrameProcessor):
     def __init__(
         self,
         *,
-        adapter_client: "HarnessAdapterClient",
-        gate_state: "InferenceGateState",
-        deferred_buffer: "DeferredUpdateBuffer",
+        adapter_client: HarnessAdapterClient,
+        gate_state: InferenceGateState,
+        deferred_buffer: DeferredUpdateBuffer,
         default_target: str,
     ) -> None:
         super().__init__()
@@ -62,16 +68,29 @@ class HarnessBridgeProcessor(FrameProcessor):
         self._active_correlation_id: str | None = None
         self._consumer_task: asyncio.Task[None] | None = None
 
-    async def setup(self, _setup) -> None:  # type: ignore[override]
-        # Start consuming events from the adapter client.
-        self._consumer_task = asyncio.create_task(self._consume_events())
+    async def setup(self, setup) -> None:  # type: ignore[override]
+        # CRITICAL: pipecat's FrameProcessor.setup wires _clock, _task_manager,
+        # _observer, AND creates the input-task that owns push_frame's queue.
+        # Skipping super() means push_frame silently drops every frame.
+        await super().setup(setup)
 
     async def cleanup(self) -> None:
         if self._consumer_task:
             self._consumer_task.cancel()
+            try:
+                await self._consumer_task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+        await super().cleanup()
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
+
+        # Defer the adapter-event consumer until StartFrame has propagated.
+        # If we start it earlier, push_frame from inside _consume_events fires
+        # before pipecat's __started flag flips and is silently dropped.
+        if isinstance(frame, StartFrame) and self._consumer_task is None:
+            self._consumer_task = asyncio.create_task(self._consume_events())
 
         # Voice path: STT emitted a final transcript.
         if isinstance(frame, TranscriptionFrame) and frame.text.strip():
@@ -92,15 +111,16 @@ class HarnessBridgeProcessor(FrameProcessor):
 
         new_id = _new_correlation_id()
 
+        command: HarnessCommandVariant
         if self._gate.harness_in_flight and self._active_correlation_id:
-            command: HarnessCommand = SubmitWithSteer(
+            command = SubmitWithSteer(
                 kind="submit_with_steer",
                 correlation_id=new_id,
                 target=self._default_target,
-                payload={
-                    "text": text,
-                    "cancels_correlation_id": self._active_correlation_id,
-                },
+                payload=Payload1(
+                    text=text,
+                    cancels_correlation_id=self._active_correlation_id,
+                ),
             )
             self._gate.mark_cancel_pending(self._active_correlation_id)
             logger.info(
@@ -113,7 +133,7 @@ class HarnessBridgeProcessor(FrameProcessor):
                 kind="submit_text",
                 correlation_id=new_id,
                 target=self._default_target,
-                payload={"text": text},
+                payload=Payload(text=text),
             )
             logger.info("bridge.submit_text", new_id=new_id)
 
@@ -127,11 +147,11 @@ class HarnessBridgeProcessor(FrameProcessor):
             return
         target = self._active_correlation_id
         self._gate.mark_cancel_pending(target)
-        cancel: HarnessCommand = Cancel(
+        cancel = Cancel(
             kind="cancel",
             correlation_id=_new_correlation_id(),
             target=self._default_target,
-            payload={"target_correlation_id": target},
+            payload=Payload2(target_correlation_id=target),
         )
         await self._client.submit(cancel)
         logger.info("bridge.cancel", correlation_id=target)

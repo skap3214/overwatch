@@ -16,7 +16,6 @@ from typing import Any
 import pytest
 
 from overwatch_pipeline.deferred_update_buffer import DeferredUpdateBuffer
-from overwatch_pipeline.frames import HarnessEventFrame, UserTextInputFrame
 from overwatch_pipeline.harness_bridge import HarnessBridgeProcessor
 from overwatch_pipeline.inference_gate import InferenceGateState
 from overwatch_pipeline.protocol import (
@@ -25,7 +24,6 @@ from overwatch_pipeline.protocol import (
     SessionEnd,
     TextDelta,
 )
-
 
 pytestmark = pytest.mark.asyncio
 

@@ -80,8 +80,8 @@ export function HarnessInfoSection() {
           lineHeight: 14,
         }}
       >
-        To switch agents, run `overwatch agent set <id>` or use
-        `overwatch setup --agent <id>`, then restart.
+        To switch agents, run {"`overwatch agent set <id>`"} or use{" "}
+        {"`overwatch setup --agent <id>`"}, then restart.
       </Text>
     </View>
   );

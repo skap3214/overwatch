@@ -26,14 +26,30 @@ interface ProviderInfo {
 }
 
 async function loadProviders(): Promise<ProviderInfo[]> {
-  // Resolve the backend's provider registry from inside the Overwatch app dir
-  // (`~/.overwatch/app` for installed users, repo root in dev). We stitch the
-  // path manually rather than depending on the backend's package being on
-  // node_module resolution paths.
+  // Resolve the daemon's provider registry from inside the Overwatch app dir.
+  // After the voice/harness-bridge overhaul the registry lives in
+  // `packages/session-host-daemon/src/harness/providers/` (lifted from the
+  // root `src/` tree).
   const candidates = [
-    path.resolve(process.cwd(), "src/harness/providers/index.ts"),
-    path.resolve(process.cwd(), "../../src/harness/providers/index.ts"),
-    path.resolve(process.env.HOME ?? "~", ".overwatch/app/src/harness/providers/index.ts"),
+    // Repo dev: cwd is repo root.
+    path.resolve(
+      process.cwd(),
+      "packages/session-host-daemon/src/harness/providers/index.ts",
+    ),
+    // CLI run from packages/cli/ via `npm run` — walk back up.
+    path.resolve(
+      process.cwd(),
+      "../session-host-daemon/src/harness/providers/index.ts",
+    ),
+    path.resolve(
+      process.cwd(),
+      "../../session-host-daemon/src/harness/providers/index.ts",
+    ),
+    // Installed: ~/.overwatch/app/packages/session-host-daemon/...
+    path.resolve(
+      process.env.HOME ?? "~",
+      ".overwatch/app/packages/session-host-daemon/src/harness/providers/index.ts",
+    ),
   ];
 
   for (const candidate of candidates) {

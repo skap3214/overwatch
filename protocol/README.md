@@ -16,10 +16,10 @@ schema/
 
 The schema is consumed by both runtimes via codegen:
 
-- TypeScript: `npm run protocol:gen` — generates `packages/shared/src/protocol/types.generated.ts` via [`json-schema-to-typescript`](https://github.com/bcherny/json-schema-to-typescript).
-- Python: `make -C pipecat protocol-gen` — generates `pipecat/overwatch_pipeline/protocol/types_generated.py` via [`datamodel-code-generator`](https://github.com/koxudaxi/datamodel-code-generator) (pydantic v2).
+- TypeScript: `npm run protocol:gen:ts` — generates `packages/shared/src/protocol/types.generated.ts` via [`json-schema-to-typescript`](https://github.com/bcherny/json-schema-to-typescript).
+- Python: `npm run protocol:gen:py` — generates `pipecat/overwatch_pipeline/protocol/generated/*.py` via [`datamodel-code-generator`](https://github.com/koxudaxi/datamodel-code-generator) (pydantic v2).
 
-CI runs both and fails if generated files drift from `schema/`.
+`npm run protocol:gen` runs both. `npm run protocol:check` regenerates and fails if anything drifted — that's the CI guard.
 
 ## Versioning
 
@@ -27,8 +27,8 @@ CI runs both and fails if generated files drift from `schema/`.
 
 ## Validation
 
-- TypeScript: `ajv` validates inbound messages; outbound is constructed via generated types so it can't be malformed at the source.
-- Python: `pydantic` validates inbound messages; outbound is constructed via generated models.
+- TypeScript: outbound messages are constructed via generated types, so they cannot be malformed at the source. Inbound on the daemon side is validated structurally inside `AdapterProtocolServer.onMessage` (kind + allowlist + token check) — there is no runtime JSON-Schema validator wired in today.
+- Python: `pydantic` validates inbound messages on the orchestrator side; outbound is constructed via generated models.
 
 ## Editing
 

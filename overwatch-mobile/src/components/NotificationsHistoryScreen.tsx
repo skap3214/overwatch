@@ -10,7 +10,6 @@ import { ArrowLeft, Bell, AlertTriangle, Cog } from "lucide-react-native";
 import { useColors } from "../theme";
 import { useNotificationsStore } from "../stores/notifications-store";
 import { useMonitorsStore } from "../stores/monitors-store";
-import { realtimeClient } from "../services/realtime";
 import { MonitorDetailScreen } from "./MonitorDetailScreen";
 import type { NotificationEvent, NotificationKind, ScheduledMonitor } from "../types";
 
@@ -64,8 +63,11 @@ export function NotificationsHistoryScreen({ visible, onClose }: Props) {
 
   const onTap = (n: NotificationEvent) => {
     if (n.status === "new") {
+      // Local-only ack for the alpha. The remote ack path travels back via
+      // a future provider_event { provider: "overwatch", kind: "notification.ack" }
+      // — once the orchestrator forwards them. For now the orchestrator's
+      // notifications surface as ui-only events and don't need a server ack.
       markSeen(n.id);
-      realtimeClient.acknowledgeNotification(n.id);
     }
     // If this notification has a jobId / source.id, deep-link to the monitor.
     const jobId =

@@ -31,6 +31,8 @@ export interface ConversationState {
   transportState: "disconnected" | "connecting" | "connected";
   /** Mirrors legacy turn-store turnState shape so PTTButton can keep its UI logic. */
   turnState: TurnState;
+  /** Last user-visible session-start / transport error. Cleared on success. */
+  connectError: string | null;
   // Internal: tracks the deferred-finalization timer id per message.
   finalizeTimerByMessageId: Record<string, ReturnType<typeof setTimeout>>;
 }
@@ -53,6 +55,7 @@ export interface ConversationActions {
   setPTTMode(ptt: boolean): void;
   setTransportState(s: ConversationState["transportState"]): void;
   setTurnState(s: TurnState): void;
+  setConnectError(err: string | null): void;
   clearMessages(): void;
   reset(): void;
 }
@@ -82,6 +85,7 @@ export const useConversationStore = create<
   isPTTMode: false,
   transportState: "disconnected",
   turnState: "idle",
+  connectError: null,
   finalizeTimerByMessageId: {},
 
   appendUserMessage(text, final) {
@@ -222,11 +226,16 @@ export const useConversationStore = create<
   },
 
   setTransportState(s) {
-    set({ transportState: s });
+    // A successful connect implicitly clears any stale auto-connect error.
+    set(s === "connected" ? { transportState: s, connectError: null } : { transportState: s });
   },
 
   setTurnState(s) {
     set({ turnState: s });
+  },
+
+  setConnectError(err) {
+    set({ connectError: err });
   },
 
   clearMessages() {
@@ -239,6 +248,7 @@ export const useConversationStore = create<
       isRemoteMuted: false,
       transportState: "disconnected",
       turnState: "idle",
+      connectError: null,
       finalizeTimerByMessageId: {},
     });
   },

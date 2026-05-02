@@ -10,14 +10,12 @@ Verifies the registry-driven dispatch rules from §4.4:
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 from pipecat.frames.frames import LLMTextFrame
 from pipecat.processors.frame_processor import FrameDirection
 
 from overwatch_pipeline.deferred_update_buffer import DeferredUpdateBuffer
-from overwatch_pipeline.frames import HarnessEventFrame, ServerMessageOutFrame
+from overwatch_pipeline.frames import HarnessEventFrame
 from overwatch_pipeline.harness_event_router import HarnessRouterProcessor
 from overwatch_pipeline.protocol import (
     AssistantMessage,
@@ -28,7 +26,6 @@ from overwatch_pipeline.protocol import (
     TextDelta,
     ToolLifecycle,
 )
-
 
 pytestmark = pytest.mark.asyncio
 
@@ -93,7 +90,7 @@ async def test_session_end_routes_to_ui_only() -> None:
     )
     await router._dispatch(HarnessEventFrame(event=event))
     assert len(pushed) == 1
-    assert pushed[0][0] == "ServerMessageOutFrame"
+    assert pushed[0][0] == "OutputTransportMessageFrame"
 
 
 async def test_tool_lifecycle_complete_routes_to_inject() -> None:
@@ -181,7 +178,7 @@ async def test_unknown_provider_event_dev_default_ui_only() -> None:
     )
     await router._dispatch(HarnessEventFrame(event=event))
     assert len(pushed) == 1
-    assert pushed[0][0] == "ServerMessageOutFrame"
+    assert pushed[0][0] == "OutputTransportMessageFrame"
 
 
 async def test_unknown_provider_event_prod_default_drop() -> None:

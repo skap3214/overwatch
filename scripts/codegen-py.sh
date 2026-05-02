@@ -34,8 +34,11 @@ datamodel-codegen \
   --use-standard-collections \
   --use-union-operator \
   --use-schema-description \
+  --use-annotated \
+  --field-constraints \
   --target-python-version 3.12 \
   --use-double-quotes \
+  --disable-timestamp \
   --formatters black isort
 
 # Ensure the generated package is importable.

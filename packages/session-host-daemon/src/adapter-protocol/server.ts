@@ -5,11 +5,13 @@
  * channel.
  *
  * Wire format: envelope-wrapped JSON (see /protocol/schema/envelope.schema.json).
- * Encryption: re-uses the existing nacl.box per-pair scheme; orchestrator and
- * daemon both encrypt with the user's keypair when passing through the relay.
  *
- * This implementation focuses on the orchestrator-facing surface. Encryption
- * concerns live in the relay-client module (existing).
+ * Auth: each command envelope carries a per-session HMAC token that the phone
+ * derived from the shared pairing_token. We verify HMAC + expiry via
+ * TokenValidator before handling any command. The transport itself is plain
+ * TLS-terminated WebSocket — the relay's UserChannel keeps phone/orchestrator/
+ * daemon traffic separated per-user; there is no symmetric e2e encryption on
+ * top of TLS.
  */
 
 import { randomUUID } from "node:crypto";
@@ -32,6 +34,11 @@ import { createTokenValidator, type TokenValidator } from "./token-validator.js"
 import { AuditLog } from "./audit-log.js";
 import { StaleSuppression } from "./stale-suppression.js";
 import { CancellationRegistry } from "./cancellation.js";
+import { createCatchAllLogger, type CatchAllLogger } from "./catch-all-logger.js";
+import {
+  notificationStore,
+  type NotificationEvent,
+} from "../notifications/store.js";
 
 const require = createRequire(import.meta.url);
 const wsLib = require("ws") as any;
@@ -55,6 +62,11 @@ function stampEvent(
   return { ...event, correlation_id, target } as HarnessEvent;
 }
 
+function majorVersion(version: string): string {
+  const dot = version.indexOf(".");
+  return dot === -1 ? version : version.slice(0, dot);
+}
+
 export class AdapterProtocolServer {
   private socket: any | null = null;
   private readonly tokens: TokenValidator;
@@ -63,6 +75,8 @@ export class AdapterProtocolServer {
   private readonly registry = new CancellationRegistry();
   private reconnectTimer: NodeJS.Timeout | null = null;
   private stopped = false;
+  private readonly catchAllLoggers = new Map<string, CatchAllLogger>();
+  private notificationsUnsubscribe: (() => void) | null = null;
 
   constructor(private readonly opts: AdapterProtocolServerOptions) {
     this.tokens = createTokenValidator(opts.deps.pairingToken || "alpha-placeholder");
@@ -72,6 +86,9 @@ export class AdapterProtocolServer {
   start(): void {
     this.stopped = false;
     this.connect();
+    this.notificationsUnsubscribe = notificationStore.subscribe((notification) => {
+      this.emitNotificationEvent(notification);
+    });
   }
 
   stop(): void {
@@ -88,6 +105,46 @@ export class AdapterProtocolServer {
       }
       this.socket = null;
     }
+    if (this.notificationsUnsubscribe) {
+      this.notificationsUnsubscribe();
+      this.notificationsUnsubscribe = null;
+    }
+  }
+
+  private getCatchAllLogger(provider: string): CatchAllLogger {
+    let logger = this.catchAllLoggers.get(provider);
+    if (!logger) {
+      logger = createCatchAllLogger(provider, this.opts.deps.catchAllLoggerEnabled);
+      this.catchAllLoggers.set(provider, logger);
+    }
+    return logger;
+  }
+
+  private emitNotificationEvent(notification: NotificationEvent): void {
+    // Surface scheduler/system notifications to the orchestrator as a Tier-2
+    // provider_event. Routed by HARNESS_EVENT_CONFIGS["overwatch/notification"]
+    // (speak), so the user hears the speakable text on their next idle moment.
+    const target = Object.keys(this.opts.harnesses)[0] ?? "claude-code";
+    const message =
+      notification.speakableText ?? notification.body ?? notification.title;
+    this.sendEvent({
+      type: "provider_event",
+      correlation_id: `notif-${notification.id}`,
+      target,
+      provider: "overwatch",
+      kind: "notification",
+      payload: {
+        notification_id: notification.id,
+        notification_kind: notification.kind,
+        title: notification.title,
+        body: notification.body,
+        message,
+        speakable_text: notification.speakableText,
+        source: notification.source,
+        metadata: notification.metadata,
+      },
+      raw: notification as unknown as Record<string, unknown>,
+    });
   }
 
   private connect(): void {
@@ -172,6 +229,22 @@ export class AdapterProtocolServer {
     } catch {
       return; // ignore non-JSON
     }
+
+    // Protocol-version handshake: refuse mismatched majors. We respond with an
+    // explicit error so the orchestrator surfaces the mismatch instead of
+    // hanging waiting for a response.
+    const wireVersion = envelope.protocol_version;
+    if (
+      typeof wireVersion === "string" &&
+      majorVersion(wireVersion) !== majorVersion(PROTOCOL_VERSION)
+    ) {
+      this.respondError(
+        envelope,
+        `protocol version mismatch: wire=${wireVersion} local=${PROTOCOL_VERSION}`,
+      );
+      return;
+    }
+
     if (envelope.kind !== "harness_command") return;
 
     // Token validation.
@@ -325,6 +398,14 @@ export class AdapterProtocolServer {
   }
 
   private sendEvent(event: HarnessEvent): void {
+    // Catch-all log first — this captures even events that fail to send
+    // (socket closed, etc.) which are exactly the ones we want to inspect.
+    const provider =
+      (event as { provider?: string }).provider ??
+      (event as { target?: string }).target ??
+      "unknown";
+    this.getCatchAllLogger(provider)(event);
+
     this.send({
       protocol_version: PROTOCOL_VERSION,
       kind: "harness_event",

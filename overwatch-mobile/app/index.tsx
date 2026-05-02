@@ -40,8 +40,11 @@ export default function App() {
 
   const transportState = useConversationStore((s) => s.transportState);
   const turnState = useConversationStore((s) => s.turnState);
+  const connectError = useConversationStore((s) => s.connectError);
   const setTurnState = useConversationStore((s) => s.setTurnState);
+  const setConnectError = useConversationStore((s) => s.setConnectError);
   const clearMessages = useConversationStore((s) => s.clearMessages);
+  const [retryNonce, setRetryNonce] = useState(0);
   const recordingUI = turnState === "recording" || turnState === "preparing";
 
   const { connect, disconnect, sendUserText, setMicEnabled, sendInterruptIntent } =
@@ -77,47 +80,97 @@ export default function App() {
     useThemeStore.getState().loadMode();
   }, [hydratePairing]);
 
-  // Auto-connect once paired and hydrated.
+  // Auto-connect once paired and hydrated. Re-runs when retryNonce flips.
   useEffect(() => {
     if (!isPaired) return;
     let cancelled = false;
     (async () => {
+      setConnectError(null);
       const sessionId = `s-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const sessionToken = await deriveSessionToken(pairingToken, sessionId);
+      let sessionToken: string;
+      try {
+        sessionToken = await deriveSessionToken(pairingToken, sessionId);
+      } catch (err) {
+        if (!cancelled) {
+          setConnectError(
+            `Couldn't derive session token: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+        return;
+      }
 
       // Mint Daily room URL via the relay.
+      // The session_token is the per-session HMAC the orchestrator will
+      // present on every envelope; the daemon verifies it via the same
+      // shared pairing_token. The relay forwards all three to Pipecat Cloud
+      // as runner_args.body so the bot can read them at start time.
       let roomUrl = "";
       let roomToken = "";
       try {
         const res = await fetch(`${relayUrl}/api/sessions/start`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: userId, pairing_token: pairingToken }),
+          body: JSON.stringify({
+            user_id: userId,
+            pairing_token: pairingToken,
+            session_token: sessionToken,
+          }),
         });
-        if (res.ok) {
-          const data = (await res.json()) as {
-            daily_room_url?: string;
-            daily_token?: string;
-          };
-          roomUrl = data.daily_room_url ?? "";
-          roomToken = data.daily_token ?? "";
+        if (!res.ok) {
+          const body = await res.text().catch(() => "");
+          throw new Error(
+            `relay /api/sessions/start ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`,
+          );
+        }
+        const data = (await res.json()) as {
+          daily_room_url?: string;
+          daily_token?: string;
+        };
+        roomUrl = data.daily_room_url ?? "";
+        roomToken = data.daily_token ?? "";
+        if (!roomUrl || !roomToken) {
+          throw new Error(
+            "relay returned no daily_room_url / daily_token — check Pipecat Cloud session minting",
+          );
         }
       } catch (err) {
-        console.warn("session start failed", err);
+        if (!cancelled) {
+          setConnectError(
+            err instanceof Error ? err.message : `Session start failed: ${String(err)}`,
+          );
+        }
+        return;
       }
-      if (!roomUrl || !roomToken || cancelled) return;
+      if (cancelled) return;
 
-      await connect({
-        endpoint: roomUrl,
-        sessionToken,
-        mode: "ptt",
-      });
+      try {
+        await connect({
+          endpoint: roomUrl,
+          sessionToken,
+          mode: "ptt",
+        });
+      } catch (err) {
+        if (!cancelled) {
+          setConnectError(
+            err instanceof Error ? err.message : `Transport failed: ${String(err)}`,
+          );
+        }
+      }
     })();
     return () => {
       cancelled = true;
       void disconnect();
     };
-  }, [isPaired, relayUrl, userId, pairingToken, connect, disconnect]);
+  }, [
+    isPaired,
+    relayUrl,
+    userId,
+    pairingToken,
+    connect,
+    disconnect,
+    setConnectError,
+    retryNonce,
+  ]);
 
   const goToSettings = useCallback(() => setShowSettings(true), []);
   const closeSettings = useCallback(() => setShowSettings(false), []);
@@ -208,12 +261,27 @@ export default function App() {
                 textAlign: "center",
               }}
             >
-              {transportState === "connecting"
-                ? "Connecting..."
-                : isPaired
-                  ? "Reconnecting..."
-                  : "Not paired"}
+              {connectError
+                ? "Couldn't connect"
+                : transportState === "connecting"
+                  ? "Connecting..."
+                  : isPaired
+                    ? "Reconnecting..."
+                    : "Not paired"}
             </Text>
+            {connectError ? (
+              <Text
+                style={{
+                  color: colors.textDim,
+                  fontFamily: "IosevkaAile-Regular",
+                  fontSize: 12,
+                  textAlign: "center",
+                  opacity: 0.85,
+                }}
+              >
+                {connectError}
+              </Text>
+            ) : null}
             {!isPaired ? (
               <Pressable
                 onPress={() => setShowQR(true)}
@@ -232,6 +300,26 @@ export default function App() {
                   }}
                 >
                   Pair via QR
+                </Text>
+              </Pressable>
+            ) : connectError ? (
+              <Pressable
+                onPress={() => setRetryNonce((n) => n + 1)}
+                style={{
+                  backgroundColor: colors.accent,
+                  paddingHorizontal: 24,
+                  paddingVertical: 12,
+                  borderRadius: 12,
+                }}
+              >
+                <Text
+                  style={{
+                    color: colors.bg,
+                    fontFamily: "IosevkaAile-Medium",
+                    fontSize: 14,
+                  }}
+                >
+                  Retry
                 </Text>
               </Pressable>
             ) : (

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from loguru import logger
 
+from .auth import create_token_validator
 from .deferred_update_buffer import DeferredUpdateBuffer
 from .harness_adapter_client import HarnessAdapterClient, RelayClient
 from .harness_bridge import HarnessBridgeProcessor
@@ -38,6 +39,7 @@ from .inference_gate import (
 )
 from .say_text_voice_guard import SayTextVoiceGuard
 from .settings import Settings, load
+from .typed_input_decoder import TypedInputDecoder
 from .voices import resolve_voice_id
 
 
@@ -67,19 +69,49 @@ async def bot(runner_args) -> None:  # noqa: ANN001
             f"{type(runner_args).__name__}"
         )
 
-    # Body shape from /api/sessions/start: { user_id, pairing_token }.
+    # Body shape from relay's /api/sessions/start:
+    #   { user_id, pairing_token, session_token, default_target? }
+    # - pairing_token authenticates the bot's WS to /api/users/<id>/ws/orchestrator
+    # - session_token is the per-session HMAC the daemon's TokenValidator verifies
+    #   on every harness_command envelope; the phone signed it with the same
+    #   shared pairing_token, so the bot just forwards it without re-deriving.
     body = runner_args.body or {}
     if not isinstance(body, dict):
         body = {}
     user_id = body.get("user_id") or "alpha"
-    pairing_token = body.get("pairing_token") or settings.session_token_secret
+    pairing_token = body.get("pairing_token") or ""
+    session_token = body.get("session_token") or ""
     target = body.get("default_target") or "claude-code"
+
+    if not user_id or not pairing_token or not session_token:
+        raise RuntimeError(
+            "overwatch-orchestrator missing identity in runner_args.body — "
+            "expected user_id, pairing_token, session_token (got "
+            f"keys: {sorted(body.keys())})"
+        )
+
+    # Verify the phone-derived session_token at the orchestrator boundary.
+    # The daemon also verifies on every command — this catches expired or
+    # tampered tokens up-front so the user sees a clear failure instead of
+    # a silent dead Daily room.
+    token_validator = create_token_validator(pairing_token)
+    claims = token_validator.verify(session_token)
+    if claims is None:
+        raise RuntimeError(
+            "overwatch-orchestrator rejected session_token — "
+            "expired or signed with a different pairing secret"
+        )
+    logger.info(
+        "bot.session_token_verified",
+        session_id=claims.session_id,
+        expires_at=claims.expires_at,
+    )
 
     transport = DailyTransport(
         runner_args.room_url,
         runner_args.token,
         "Overwatch",
-        params=DailyParams(
+        params=DailyParams(  # type: ignore[call-arg]
             audio_in_enabled=True,
             audio_out_enabled=True,
             vad_analyzer=SileroVADAnalyzer(),
@@ -108,13 +140,23 @@ async def bot(runner_args) -> None:  # noqa: ANN001
 
     buffer = DeferredUpdateBuffer()
 
+    async def _on_harness_state(payload: dict) -> None:
+        # Daemon's snapshot is the source of truth for `in_flight` at connect
+        # time — it knows about turns that may have started before the
+        # orchestrator booted (e.g. mid-flight reconnects).
+        in_flight = payload.get("in_flight")
+        if isinstance(in_flight, bool):
+            gate_state.update_harness_in_flight(in_flight)
+            logger.info("bot.harness_state_synced", in_flight=in_flight)
+
     adapter_client: HarnessAdapterClient = RelayClient(
         relay_url=settings.relay_url,
         user_id=user_id,
         pairing_token=pairing_token,
-        session_token=settings.session_token_secret,
+        session_token=session_token,
+        on_harness_state=_on_harness_state,
     )
-    await adapter_client.connect()  # type: ignore[union-attr]
+    await adapter_client.connect()
 
     bridge = HarnessBridgeProcessor(
         adapter_client=adapter_client,
@@ -136,9 +178,14 @@ async def bot(runner_args) -> None:  # noqa: ANN001
 
     say_guard = SayTextVoiceGuard()
 
+    typed_input_decoder = TypedInputDecoder()
+
     pipeline = Pipeline(
         [
             transport.input(),
+            # Decode Daily app-messages (typed user input from mobile InputBar)
+            # into UserTextInputFrames before VAD/STT see anything.
+            typed_input_decoder,
             stt,
             idle_report,
             pre_gate,
@@ -151,10 +198,12 @@ async def bot(runner_args) -> None:  # noqa: ANN001
         ]
     )
 
+    # Pipecat 1.1.0 dropped the allow_interruptions kwarg — interruption is
+    # always-on once a VAD analyzer is wired into the transport (see DailyParams
+    # above). Only the metric flags survive on PipelineParams.
     task = PipelineTask(
         pipeline,
         params=PipelineParams(
-            allow_interruptions=True,
             enable_metrics=True,
             enable_usage_metrics=True,
         ),

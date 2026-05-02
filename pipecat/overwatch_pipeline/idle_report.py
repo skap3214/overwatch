@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Optional
 
 from loguru import logger
 from pipecat.frames.frames import (
@@ -43,10 +42,10 @@ class IdleReportProcessor(FrameProcessor):
         self._buffer = buffer
         self._threshold = threshold_seconds
         self._cooldown = cooldown_seconds
-        self._last_bot_stopped_at: Optional[float] = None
-        self._last_report_at: Optional[float] = None
+        self._last_bot_stopped_at: float | None = None
+        self._last_report_at: float | None = None
         self._user_has_spoken = False
-        self._timer_task: Optional[asyncio.Task[None]] = None
+        self._timer_task: asyncio.Task[None] | None = None
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)

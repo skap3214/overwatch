@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from overwatch_pipeline.protocol import (
+    PROTOCOL_VERSION,
     Cancel,
     HarnessEvent,
-    PROTOCOL_VERSION,
+    ProviderEvent,
     SubmitText,
     SubmitWithSteer,
     TextDelta,
-    ProviderEvent,
 )
 
 

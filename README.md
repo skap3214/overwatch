@@ -122,36 +122,60 @@ overwatch agent list|status|set <id>
 ## Architecture
 
 ```
-iPhone → Relay (Cloudflare Worker) → Mac
-           E2E encrypted              Backend + Agent + tmux
+iPhone ─ WebRTC ─ Pipecat Cloud (Python orchestrator)
+                       │
+                       │  HarnessCommand / HarnessEvent
+                       │  over the relay's UserChannel
+                       ▼
+                 Cloudflare Worker relay
+                       │
+                       │  WebSocket
+                       ▼
+                Mac session-host daemon (TS)
+                  └─ tmux + harness adapters
+                     (Claude Code CLI / Pi / Hermes)
 ```
 
-- **Phone**: voice input, text input, transcript display, TTS playback
-- **Relay**: stateless WebSocket forwarder, E2E encrypted with nacl.box
-- **Mac**: pi-coding-agent, Deepgram STT/TTS, tmux control
+- **Phone (RN/Expo)**: Pipecat RN client — joins a Pipecat Cloud Daily room
+  for voice + typed input; renders transcripts and harness UI.
+- **Pipecat Cloud (Python)**: STT (Deepgram), TTS (Cartesia), VAD/smart-turn,
+  inference gate, harness bridge, and the registry-driven event router. No
+  voice LLM in the main flow — the harness *is* the LLM.
+- **Relay (Cloudflare Worker)**: mints Pipecat Cloud sessions, derives the
+  per-session HMAC token, and routes JSON envelopes between the orchestrator
+  and the Mac daemon via a `UserChannel` durable object.
+- **Mac daemon (TS)**: speaks the adapter-protocol back to the orchestrator,
+  runs the local tmux + harness fleet, hosts the local REST API the mobile app
+  uses for monitors / tmux / health.
 
 ## API Keys Required
 
 | Service | Purpose | Get one at |
 |---|---|---|
+| Pipecat Cloud | Hosts the cloud orchestrator | https://daily.co/products/pipecat-cloud |
+| Deepgram | Server-side STT (Nova-3) | https://console.deepgram.com |
+| Cartesia | Server-side streaming TTS (Sonic) | https://play.cartesia.ai |
 | Pi provider (Anthropic, OpenAI Codex, GitHub Copilot, etc.) | Agent access via Pi auth | Configured during `overwatch setup` |
-| Deepgram | Speech-to-text + text-to-speech | https://console.deepgram.com |
 
 ## Speech Stack
 
-- Overwatch uses Deepgram for prerecorded STT and streaming TTS.
-- TTS streams PCM audio chunks as the assistant text arrives, rather than waiting for the full reply.
-- The default Deepgram TTS voice is `aura-2-aries-en`.
+- STT: Deepgram Nova-3, streaming with interim results.
+- TTS: Cartesia Sonic, streaming PCM as the assistant text arrives.
+- VAD: Silero; turn-detection: pipecat smart-turn.
+- The voice loop runs entirely server-side — the phone is a thin WebRTC client.
 
 ## Project Structure
 
 ```
-src/                    Backend (Node/Hono)
-overwatch-mobile/       iOS app (React Native/Expo)
-packages/cli/           CLI tool
-packages/shared/        Shared crypto
+protocol/               JSON Schema — single source of truth for the wire protocol
+pipecat/                Python orchestrator (Pipecat Cloud deploy target)
+packages/
+  session-host-daemon/  TS daemon on the user's Mac (tmux + harness fleet)
+  cli/                  TS CLI (overwatch setup/start/status/update)
+  shared/               Generated TS types + small utility helpers
+overwatch-mobile/       iOS app (React Native/Expo, Pipecat RN client)
 relay/                  Cloudflare Worker relay
-docs/                   Architecture docs + plans
+docs/                   Architecture docs + plans + research
 ```
 
 ## License

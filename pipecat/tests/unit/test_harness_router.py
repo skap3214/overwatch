@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from overwatch_pipeline.harness_router import (
     DEFAULT_VOICE_ACTION_DEV,
     DEFAULT_VOICE_ACTION_PROD,

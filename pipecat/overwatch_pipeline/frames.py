@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 from pipecat.frames.frames import DataFrame
 
-from .protocol import HarnessCommand, HarnessEvent, ServerMessage
+from .protocol import HarnessCommand, HarnessEvent
 
 
 @dataclass
@@ -48,13 +48,6 @@ class HarnessCommandFrame(DataFrame):
     """
 
     command: HarnessCommand = field(default=None)  # type: ignore[assignment]
-
-
-@dataclass
-class ServerMessageOutFrame(DataFrame):
-    """Outbound server-message for the mobile client over the data channel."""
-
-    message: ServerMessage = field(default=None)  # type: ignore[assignment]
 
 
 @dataclass

@@ -20,6 +20,7 @@
  */
 
 import { promises as fs } from "node:fs";
+import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import os from "node:os";
@@ -38,9 +39,19 @@ export interface SyncResult {
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 function findRepoRoot(): string {
-  // dev (tsx):  /repo/src/harness/skill-installer.ts → /repo
-  // prod:       /repo/dist/harness/skill-installer.js → /repo
-  return path.resolve(__dirname, "..", "..");
+  // Walk upward looking for a directory containing the `.agents/skills` bundle
+  // — this is the source of truth regardless of whether we're running from
+  // dev (tsx, packages/session-host-daemon/src/...) or compiled
+  // (packages/session-host-daemon/dist/...) layouts.
+  let dir = __dirname;
+  for (let i = 0; i < 8; i++) {
+    if (existsSync(path.join(dir, ".agents", "skills"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  // Fallback: stay close to historical behavior (parent of package).
+  return path.resolve(__dirname, "..", "..", "..", "..");
 }
 
 function sha256(content: string): string {

@@ -4,7 +4,7 @@
 // Run via: npm run protocol:check
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,12 +19,12 @@ const tsFile = join(
   "protocol",
   "types.generated.ts"
 );
-const pyFile = join(
+const pyDir = join(
   repoRoot,
   "pipecat",
   "overwatch_pipeline",
   "protocol",
-  "types_generated.py"
+  "generated"
 );
 
 function readSafely(path) {
@@ -35,8 +35,41 @@ function readSafely(path) {
   }
 }
 
+// Snapshot every generated python file (multi-file output from
+// datamodel-code-generator). Drift detection compares the full set —
+// added, removed, or modified files all count as drift.
+function snapshotDir(dir) {
+  const snapshot = {};
+  let entries;
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return snapshot;
+  }
+  for (const name of entries) {
+    if (!name.endsWith(".py")) continue;
+    const full = join(dir, name);
+    try {
+      if (!statSync(full).isFile()) continue;
+    } catch {
+      continue;
+    }
+    snapshot[name] = readSafely(full);
+  }
+  return snapshot;
+}
+
+function diffSnapshots(before, after, dir) {
+  const drifted = [];
+  const allKeys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  for (const key of allKeys) {
+    if (before[key] !== after[key]) drifted.push(join(dir, key));
+  }
+  return drifted;
+}
+
 const tsBefore = readSafely(tsFile);
-const pyBefore = readSafely(pyFile);
+const pyBefore = snapshotDir(pyDir);
 
 const result = spawnSync("npm", ["run", "protocol:gen"], {
   cwd: repoRoot,
@@ -48,11 +81,11 @@ if (result.status !== 0) {
 }
 
 const tsAfter = readSafely(tsFile);
-const pyAfter = readSafely(pyFile);
+const pyAfter = snapshotDir(pyDir);
 
 const drifted = [];
 if (tsBefore !== tsAfter) drifted.push(tsFile);
-if (pyBefore !== pyAfter) drifted.push(pyFile);
+drifted.push(...diffSnapshots(pyBefore, pyAfter, pyDir));
 
 if (drifted.length > 0) {
   console.error("\nProtocol codegen drift detected:");

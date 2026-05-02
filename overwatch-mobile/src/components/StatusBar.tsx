@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { View, Text, Pressable, Animated, Alert } from "react-native";
-import { useConnectionStore } from "../stores/connection-store";
+import { useConversationStore } from "../stores/conversation";
 import { useMonitorsStore } from "../stores/monitors-store";
 import { useNotificationsStore } from "../stores/notifications-store";
 import { useColors } from "../theme";
@@ -15,24 +15,22 @@ type Props = {
   onNotificationsPress?: () => void;
 };
 
-const AMBER = "#f59e0b";
-
 export function StatusBar({ onSettingsPress, onNewChat, onMonitorsPress, onNotificationsPress }: Props) {
   const colors = useColors();
-  const connectionStatus = useConnectionStore((s) => s.connectionStatus);
+  const transportState = useConversationStore((s) => s.transportState);
   const monitorCount = useMonitorsStore((s) => s.monitorCount());
   const unreadCount = useNotificationsStore((s) => s.unreadCount());
 
   const dotColor =
-    connectionStatus === "connected" ? colors.success
-    : connectionStatus === "reconnecting" ? AMBER
-    : connectionStatus === "connecting" ? colors.accent
+    transportState === "connected" ? colors.success
+    : transportState === "connecting" ? colors.accent
     : colors.textDim;
 
-  // Pulse animation for reconnecting
+  // Pulse the dot while connecting (the legacy "reconnecting" amber state was
+  // dropped in the overhaul — Pipecat handles its own session lifecycle).
   const pulseAnim = useRef(new Animated.Value(1)).current;
   useEffect(() => {
-    if (connectionStatus === "reconnecting") {
+    if (transportState === "connecting") {
       const loop = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 0.3, duration: 800, useNativeDriver: true }),
@@ -43,7 +41,7 @@ export function StatusBar({ onSettingsPress, onNewChat, onMonitorsPress, onNotif
       return () => loop.stop();
     }
     pulseAnim.setValue(1);
-  }, [connectionStatus, pulseAnim]);
+  }, [transportState, pulseAnim]);
 
   return (
     <View

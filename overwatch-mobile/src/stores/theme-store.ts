@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Appearance } from "react-native";
-import { realtimeClient } from "../services/realtime";
 
 export type ThemeMode = "light" | "dark" | "system";
 export type Hand = "left" | "right";
@@ -37,9 +36,12 @@ export const useThemeStore = create<ThemeStore>((set, get) => ({
   },
 
   setTTSEnabled: async (enabled: boolean) => {
+    // TTS is now decided server-side in the orchestrator pipeline; this flag
+    // is a UI hint we ship as part of the next user_text server-message so
+    // the orchestrator can decide whether to mute Cartesia for this user.
+    // For the alpha, we only persist locally — the orchestrator default is on.
     set({ ttsEnabled: enabled });
     await AsyncStorage.setItem(TTS_KEY, enabled ? "true" : "false");
-    realtimeClient.updateSettings({ tts: enabled });
   },
 
   loadMode: async () => {

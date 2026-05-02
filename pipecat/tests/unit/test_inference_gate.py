@@ -9,7 +9,6 @@ import pytest
 
 from overwatch_pipeline.inference_gate import InferenceGateState
 
-
 pytestmark = pytest.mark.asyncio
 
 

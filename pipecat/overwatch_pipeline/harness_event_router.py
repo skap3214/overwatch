@@ -8,12 +8,12 @@ from loguru import logger
 from pipecat.frames.frames import (
     Frame,
     LLMTextFrame,
-    TTSSpeakFrame,
+    OutputTransportMessageFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
 from .deferred_update_buffer import DeferredUpdateBuffer
-from .frames import HarnessEventFrame, ServerMessageOutFrame
+from .frames import HarnessEventFrame
 from .harness_router import lookup_config
 
 
@@ -76,10 +76,13 @@ class HarnessRouterProcessor(FrameProcessor):
                 )
             return
 
-        # ui-only
+        # ui-only — Daily transport sends the .message JSON to the mobile
+        # client over the WebRTC data channel as a Daily app-message. The
+        # mobile-side `onServerMessage` handler unwraps `{type: "harness_event",
+        # event: ...}` and updates the conversation store.
         await self.push_frame(
-            ServerMessageOutFrame(
-                message={"type": "harness_event", "event": event_dict},  # type: ignore[arg-type]
+            OutputTransportMessageFrame(
+                message={"type": "harness_event", "event": event_dict},
             ),
             FrameDirection.DOWNSTREAM,
         )

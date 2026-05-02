@@ -79,9 +79,17 @@ export default {
         );
       }
 
-      let body: { user_id?: string; pairing_token?: string };
+      let body: {
+        user_id?: string;
+        pairing_token?: string;
+        session_token?: string;
+      };
       try {
-        body = (await request.json()) as { user_id?: string; pairing_token?: string };
+        body = (await request.json()) as {
+          user_id?: string;
+          pairing_token?: string;
+          session_token?: string;
+        };
       } catch {
         return Response.json(
           { error: "invalid JSON body" },
@@ -89,9 +97,11 @@ export default {
         );
       }
 
-      if (!body.user_id || !body.pairing_token) {
+      if (!body.user_id || !body.pairing_token || !body.session_token) {
         return Response.json(
-          { error: "user_id and pairing_token required" },
+          {
+            error: "user_id, pairing_token, and session_token required",
+          },
           { status: 400, headers: corsHeaders },
         );
       }
@@ -108,11 +118,16 @@ export default {
           },
           body: JSON.stringify({
             createDailyRoom: true,
-            // Pipecat Cloud forwards body data to the bot for per-session config.
-            // The orchestrator uses these to construct its WS URL into the user channel.
+            // Pipecat Cloud forwards body data to the bot's runner_args.body.
+            // Bot uses pairing_token to authenticate its WS to the relay's
+            // user-channel, and session_token (HMAC of session_id|expires_at,
+            // signed by the phone with the shared pairing_token) on every
+            // outbound harness_command envelope so the daemon's TokenValidator
+            // can verify it.
             body: {
               user_id: body.user_id,
               pairing_token: body.pairing_token,
+              session_token: body.session_token,
             },
           }),
         });

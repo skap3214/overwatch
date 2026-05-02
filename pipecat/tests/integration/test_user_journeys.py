@@ -31,14 +31,13 @@ import asyncio
 from typing import Any
 
 import pytest
-from pipecat.frames.frames import LLMTextFrame
+from pipecat.frames.frames import (
+    OutputTransportMessageFrame,  # noqa: F401
+)
 from pipecat.processors.frame_processor import FrameDirection
 
 from overwatch_pipeline.deferred_update_buffer import DeferredUpdateBuffer
-from overwatch_pipeline.frames import (
-    HarnessEventFrame,
-    ServerMessageOutFrame,
-)
+from overwatch_pipeline.frames import HarnessEventFrame
 from overwatch_pipeline.harness_bridge import HarnessBridgeProcessor
 from overwatch_pipeline.harness_event_router import HarnessRouterProcessor
 from overwatch_pipeline.harness_router import lookup_config
@@ -52,7 +51,6 @@ from overwatch_pipeline.protocol import (
     TextDelta,
     ToolLifecycle,
 )
-
 
 pytestmark = pytest.mark.asyncio
 
@@ -164,13 +162,13 @@ async def test_journey_1_happy_path_voice_turn() -> None:
         bridge._on_event(event)
 
     # Router should have emitted three LLMTextFrames (2 text_delta, 1 assistant_message)
-    # and one ServerMessageOutFrame (session_end → ui-only).
+    # and one OutputTransportMessageFrame (session_end → ui-only).
     text_frames = [p for p in pushed if p[0] == "LLMTextFrame"]
     assert len(text_frames) == 3
     assert any("It's " in p[1].text for p in text_frames)
     assert any("sunny" in p[1].text for p in text_frames)
 
-    server_frames = [p for p in pushed if p[0] == "ServerMessageOutFrame"]
+    server_frames = [p for p in pushed if p[0] == "OutputTransportMessageFrame"]
     assert len(server_frames) == 1
 
     # Turn cleanup: session_end clears in-flight.
@@ -362,5 +360,5 @@ async def test_journey_6_unknown_provider_event_does_not_speak() -> None:
     # In dev mode, default policy is ui-only → no LLMTextFrame.
     text_frames = [p for p in pushed if p[0] == "LLMTextFrame"]
     assert text_frames == []
-    server_frames = [p for p in pushed if p[0] == "ServerMessageOutFrame"]
+    server_frames = [p for p in pushed if p[0] == "OutputTransportMessageFrame"]
     assert len(server_frames) == 1

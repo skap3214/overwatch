@@ -14,21 +14,36 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from typing import AsyncIterator, Protocol
+from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import UTC, datetime
+from typing import Protocol
 
-from loguru import logger
 import websockets
+from loguru import logger
 
 from .protocol import (
-    HarnessCommand,
-    HarnessEvent,
-    Envelope,
     PROTOCOL_VERSION,
+    Cancel,
+    Envelope,
+    HarnessEvent,
+    SubmitText,
+    SubmitWithSteer,
 )
+from .protocol.generated.envelope_schema import Kind
+
+HarnessCommandVariant = SubmitText | SubmitWithSteer | Cancel
+HarnessStateCallback = Callable[[dict], Awaitable[None]]
+
+
+def _major(version: str) -> str:
+    """Return the MAJOR component of a `MAJOR.MINOR` protocol version."""
+    return version.split(".", 1)[0] if "." in version else version
 
 
 class HarnessAdapterClient(Protocol):
-    async def submit(self, command: HarnessCommand) -> None: ...
+    async def connect(self) -> None: ...
+
+    async def submit(self, command: HarnessCommandVariant) -> None: ...
 
     def events(self) -> AsyncIterator[HarnessEvent]: ...
 
@@ -53,6 +68,7 @@ class RelayClient:
         pairing_token: str,
         session_token: str,
         reconnect_delay: float = 2.0,
+        on_harness_state: HarnessStateCallback | None = None,
     ) -> None:
         # Convert https:// to wss:// (and http:// to ws://) so the relay's
         # CF Worker can complete the WebSocket upgrade.
@@ -64,6 +80,7 @@ class RelayClient:
         self._user_id = user_id
         self._session_token = session_token
         self._reconnect_delay = reconnect_delay
+        self._on_harness_state = on_harness_state
         self._socket: websockets.ClientConnection | None = None
         self._send_lock = asyncio.Lock()
         self._event_queue: asyncio.Queue[HarnessEvent] = asyncio.Queue()
@@ -85,7 +102,7 @@ class RelayClient:
                 )
                 await asyncio.sleep(self._reconnect_delay)
 
-    async def submit(self, command: HarnessCommand) -> None:
+    async def submit(self, command: HarnessCommandVariant) -> None:
         envelope = self._envelope_command(command)
         async with self._send_lock:
             if self._socket is None:
@@ -105,17 +122,46 @@ class RelayClient:
                     parsed = json.loads(raw)
                 except json.JSONDecodeError:
                     continue
-                if parsed.get("kind") != "harness_event":
+
+                # Protocol-version handshake: refuse mismatched majors. We log
+                # and drop instead of disconnecting so a one-off bad message
+                # doesn't tear down a healthy connection.
+                wire_version = parsed.get("protocol_version")
+                if isinstance(wire_version, str) and _major(wire_version) != _major(
+                    PROTOCOL_VERSION
+                ):
+                    logger.warning(
+                        "relay-client.protocol_version_mismatch",
+                        wire_version=wire_version,
+                        local_version=PROTOCOL_VERSION,
+                    )
                     continue
+
+                kind = parsed.get("kind")
                 payload = parsed.get("payload")
                 if not isinstance(payload, dict):
                     continue
-                try:
-                    # Validate via discriminated-union root model.
-                    event = HarnessEvent.model_validate(payload)
-                    await self._event_queue.put(event)
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("relay-client.invalid_event", err=str(exc))
+
+                if kind == "harness_event":
+                    try:
+                        # Validate via discriminated-union root model.
+                        event = HarnessEvent.model_validate(payload)
+                        await self._event_queue.put(event)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("relay-client.invalid_event", err=str(exc))
+                elif kind == "server_message":
+                    # Daemon sends a `harness_state` snapshot on connect so the
+                    # orchestrator can seed its inference-gate state without
+                    # waiting for the first event flow.
+                    if payload.get("type") == "harness_state" and self._on_harness_state:
+                        try:
+                            await self._on_harness_state(payload)
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning(
+                                "relay-client.harness_state_callback_error",
+                                err=str(exc),
+                            )
+                # else: silently ignore unknown kinds — forward-compat.
         except websockets.ConnectionClosed:
             logger.info("relay-client.disconnected")
             self._socket = None
@@ -138,12 +184,12 @@ class RelayClient:
             await self._socket.close()
             self._socket = None
 
-    def _envelope_command(self, command: HarnessCommand) -> Envelope:
+    def _envelope_command(self, command: HarnessCommandVariant) -> Envelope:
         return Envelope(
             protocol_version=PROTOCOL_VERSION,
-            kind="harness_command",
+            kind=Kind.harness_command,
             id=os.urandom(8).hex(),
-            timestamp=_now_iso(),
+            timestamp=datetime.now(UTC),
             session_token=self._session_token,
             payload=command.model_dump(by_alias=True),
         )
@@ -160,7 +206,10 @@ class LocalUDSClient:
     def __init__(self, socket_path: str) -> None:
         self._socket_path = socket_path
 
-    async def submit(self, command: HarnessCommand) -> None:  # pragma: no cover
+    async def connect(self) -> None:  # pragma: no cover
+        raise NotImplementedError("LocalUDSClient is a Y2 stub")
+
+    async def submit(self, command: HarnessCommandVariant) -> None:  # pragma: no cover
         raise NotImplementedError("LocalUDSClient is a Y2 stub")
 
     def events(self) -> AsyncIterator[HarnessEvent]:  # pragma: no cover
@@ -172,9 +221,3 @@ class LocalUDSClient:
 
     async def close(self) -> None:  # pragma: no cover
         return None
-
-
-def _now_iso() -> str:
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).isoformat()

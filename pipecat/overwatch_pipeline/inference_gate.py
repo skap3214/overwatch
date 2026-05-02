@@ -15,7 +15,6 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Optional
 
 from loguru import logger
 from pipecat.frames.frames import (
@@ -41,7 +40,7 @@ class Priority(IntEnum):
 class PendingRunner:
     reason: str
     priority: Priority
-    correlation_id: Optional[str] = None
+    correlation_id: str | None = None
 
 
 @dataclass
@@ -56,7 +55,7 @@ class InferenceGateState:
     _harness_in_flight: bool = False
     _cooldown_until: float = 0.0
     _cancel_pending: set[str] = field(default_factory=set)
-    _pending: Optional[PendingRunner] = None
+    _pending: PendingRunner | None = None
 
     _bot_idle_event: asyncio.Event = field(default_factory=asyncio.Event)
     _user_idle_event: asyncio.Event = field(default_factory=asyncio.Event)

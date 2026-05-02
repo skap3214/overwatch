@@ -73,41 +73,7 @@ export const usePairingStore = create<PairingState>((set, get) => ({
   },
 }));
 
-/**
- * Derives a session-scoped HMAC token from the long-term pairing token.
- * Phone-side; the orchestrator and daemon verify this same HMAC.
- *
- * The legacy nacl-based pairing flow lives in `services/crypto.ts`. The
- * session token here is a separate concept — see plan §7 trust model.
- */
-import { Buffer } from "buffer";
-
-export async function deriveSessionToken(
-  pairingToken: string,
-  sessionId: string,
-  ttlSeconds: number = 60 * 60,
-): Promise<string> {
-  const expiresAt = Math.floor(Date.now() / 1000) + ttlSeconds;
-  const message = `${sessionId}|${expiresAt}`;
-  const signature = await hmacSha256(pairingToken, message);
-  return `${message}|${signature}`;
-}
-
-async function hmacSha256(secret: string, message: string): Promise<string> {
-  // Web Crypto API is available on Hermes (RN 0.72+).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const subtle = (globalThis as any).crypto?.subtle;
-  if (!subtle) {
-    throw new Error("crypto.subtle unavailable — RN runtime is too old");
-  }
-  const enc = new TextEncoder();
-  const key = await subtle.importKey(
-    "raw",
-    enc.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await subtle.sign("HMAC", key, enc.encode(message));
-  return Buffer.from(new Uint8Array(sig)).toString("hex");
-}
+// Session token derivation lives in services/session-token.ts so it can be
+// imported from a Node-only test runner (no RN deps). Re-export here for
+// convenience. Extension-less so Metro and tsx both resolve to the .ts source.
+export { deriveSessionToken } from "../services/session-token";

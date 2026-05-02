@@ -10,12 +10,10 @@ should run this on every push.
 
 from __future__ import annotations
 
-import asyncio
 import pytest
 
 from overwatch_pipeline.deferred_update_buffer import DeferredUpdateBuffer
 from overwatch_pipeline.harness_router import lookup_config
-
 
 pytestmark = pytest.mark.asyncio
 
