@@ -53,19 +53,29 @@ class InferenceGateState:
     _bot_speaking: bool = False
     _user_speaking: bool = False
     _harness_in_flight: bool = False
+    _harness_busy: bool = False
+    _harness_busy_reason: str | None = None
     _cooldown_until: float = 0.0
-    _cancel_pending: set[str] = field(default_factory=set)
+    # Map of correlation_id → deadline (monotonic seconds). Entries past their
+    # deadline are treated as already-cleared even without an explicit
+    # confirm_cancel — protects against stuck state when the daemon misses
+    # emitting `cancel_confirmed` (e.g. its harness hangs longer than the
+    # configured cancel-confirm timeout). Without this auto-expiry the
+    # gate would refuse all future turns.
+    _cancel_pending: dict[str, float] = field(default_factory=dict)
     _pending: PendingRunner | None = None
 
     _bot_idle_event: asyncio.Event = field(default_factory=asyncio.Event)
     _user_idle_event: asyncio.Event = field(default_factory=asyncio.Event)
     _harness_idle_event: asyncio.Event = field(default_factory=asyncio.Event)
+    _harness_available_event: asyncio.Event = field(default_factory=asyncio.Event)
 
     def __post_init__(self) -> None:
         # Start with idle events set since nothing is in flight.
         self._bot_idle_event.set()
         self._user_idle_event.set()
         self._harness_idle_event.set()
+        self._harness_available_event.set()
 
     # ─── State updates ──────────────────────────────────────────────────────
 
@@ -91,19 +101,64 @@ class InferenceGateState:
         else:
             self._harness_idle_event.set()
 
+    def update_harness_busy(self, busy: bool, reason: str | None = None) -> None:
+        self._harness_busy = busy
+        self._harness_busy_reason = reason if busy else None
+        if busy:
+            self._harness_available_event.clear()
+        else:
+            self._harness_available_event.set()
+
     def mark_cancel_pending(self, correlation_id: str) -> None:
-        self._cancel_pending.add(correlation_id)
+        # Allow ~2x the cancel-confirm timeout before auto-expiring; that's
+        # generous enough to cover legit slow daemons but prevents permanent
+        # gate-busy state if cancel_confirmed never arrives.
+        deadline = (
+            time.monotonic() + max(self.cancel_confirm_timeout_seconds * 2.0, 1.0)
+        )
+        self._cancel_pending[correlation_id] = deadline
 
     def confirm_cancel(self, correlation_id: str) -> None:
-        self._cancel_pending.discard(correlation_id)
+        self._cancel_pending.pop(correlation_id, None)
+
+    def _sweep_cancel_pending(self) -> None:
+        """Drop entries whose auto-expire deadline has passed."""
+        if not self._cancel_pending:
+            return
+        now = time.monotonic()
+        expired = [cid for cid, dl in self._cancel_pending.items() if dl <= now]
+        for cid in expired:
+            self._cancel_pending.pop(cid, None)
 
     @property
     def has_cancel_pending(self) -> bool:
+        self._sweep_cancel_pending()
         return bool(self._cancel_pending)
 
     @property
     def harness_in_flight(self) -> bool:
         return self._harness_in_flight
+
+    @property
+    def harness_busy(self) -> bool:
+        return self._harness_busy
+
+    @property
+    def harness_busy_reason(self) -> str | None:
+        return self._harness_busy_reason
+
+    @property
+    def user_speaking(self) -> bool:
+        return self._user_speaking
+
+    @property
+    def bot_speaking(self) -> bool:
+        return self._bot_speaking
+
+    @property
+    def cooldown_remaining(self) -> float:
+        remaining = self._cooldown_until - time.monotonic()
+        return remaining if remaining > 0 else 0.0
 
     # ─── Decision ───────────────────────────────────────────────────────────
 
@@ -112,8 +167,25 @@ class InferenceGateState:
             not self._bot_speaking
             and not self._user_speaking
             and not self._harness_in_flight
+            and not self._harness_busy
             and not self.has_cancel_pending
             and time.monotonic() >= self._cooldown_until
+        )
+
+    def can_accept_user_turn_now(self) -> bool:
+        """True when a finalized user turn can be submitted to the harness.
+
+        Unlike background/autonomous inference, user input is allowed to
+        preempt old assistant audio. Once STT has produced the final transcript,
+        waiting for ``bot_speaking`` or the post-TTS cooldown is the exact
+        latency bug users experience as "my interruption waited for the old
+        audio to finish."
+        """
+        return (
+            not self._user_speaking
+            and not self._harness_in_flight
+            and not self._harness_busy
+            and not self.has_cancel_pending
         )
 
     async def wait_until_runnable(self) -> None:
@@ -122,10 +194,23 @@ class InferenceGateState:
                 self._bot_idle_event.wait(),
                 self._user_idle_event.wait(),
                 self._harness_idle_event.wait(),
+                self._harness_available_event.wait(),
             )
             remaining = self._cooldown_until - time.monotonic()
             if remaining > 0:
                 await asyncio.sleep(remaining)
+
+    async def wait_until_user_turn_acceptable(self) -> None:
+        while not self.can_accept_user_turn_now():
+            await asyncio.gather(
+                self._user_idle_event.wait(),
+                self._harness_idle_event.wait(),
+                self._harness_available_event.wait(),
+            )
+            if self.has_cancel_pending:
+                # cancel_pending is deadline-based and may auto-expire without
+                # another frame arriving to wake this waiter.
+                await asyncio.sleep(0.05)
 
 
 class PreLLMInferenceGate(FrameProcessor):

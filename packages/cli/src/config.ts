@@ -7,8 +7,10 @@ const CONFIG_PATH = join(CONFIG_DIR, "config.json");
 
 export interface OverwatchConfig {
   deepgramApiKey?: string;
-  sttProvider?: "deepgram";
-  ttsProvider?: "deepgram";
+  cartesiaApiKey?: string;
+  xaiApiKey?: string;
+  sttProvider?: "deepgram" | "xai";
+  ttsProvider?: "cartesia" | "xai";
   sttModel?: string;
   ttsModel?: string;
   relayUrl?: string;
@@ -31,7 +33,7 @@ const DEFAULTS: OverwatchConfig = {
   relayUrl: "https://overwatch-relay.soami.workers.dev",
   backendPort: 8787,
   sttProvider: "deepgram",
-  ttsProvider: "deepgram",
+  ttsProvider: "cartesia",
   gateway: {
     enabled: false,
     stableRoom: true,
@@ -42,7 +44,21 @@ export function loadConfig(): OverwatchConfig {
   if (!existsSync(CONFIG_PATH)) return { ...DEFAULTS };
   try {
     const stored = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
-    return { ...DEFAULTS, ...stored, gateway: { ...DEFAULTS.gateway, ...stored.gateway } };
+    const sttProvider =
+      stored.sttProvider === "deepgram" || stored.sttProvider === "xai"
+        ? stored.sttProvider
+        : DEFAULTS.sttProvider;
+    const ttsProvider =
+      stored.ttsProvider === "xai" || stored.ttsProvider === "cartesia"
+        ? stored.ttsProvider
+        : DEFAULTS.ttsProvider;
+    return {
+      ...DEFAULTS,
+      ...stored,
+      sttProvider,
+      ttsProvider,
+      gateway: { ...DEFAULTS.gateway, ...stored.gateway },
+    };
   } catch {
     return { ...DEFAULTS };
   }

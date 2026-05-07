@@ -104,6 +104,22 @@ class CancelConfirmed(Common):
     type: Literal["cancel_confirmed"]
 
 
+class Phase1(Enum):
+    compaction = "compaction"
+    tool = "tool"
+    system = "system"
+
+
+class AgentBusy(Common):
+    type: Literal["agent_busy"]
+    phase: Phase1
+    reason: str | None = None
+
+
+class AgentIdle(Common):
+    type: Literal["agent_idle"]
+
+
 class ProviderEvent(Common):
     type: Literal["provider_event"]
     provider: Annotated[
@@ -136,6 +152,8 @@ class HarnessEvent(
         | SessionEnd
         | ErrorEvent
         | CancelConfirmed
+        | AgentBusy
+        | AgentIdle
         | ProviderEvent
     ]
 ):
@@ -148,6 +166,8 @@ class HarnessEvent(
         | SessionEnd
         | ErrorEvent
         | CancelConfirmed
+        | AgentBusy
+        | AgentIdle
         | ProviderEvent,
         Field(
             description="Two-tier discriminated union of events emitted by harness adapters back to the orchestrator. Tier 1 = canonical cross-provider events. Tier 2 = provider_event envelope for everything provider-specific. Adapters never silently drop wire events; anything that doesn't map to Tier 1 emits as Tier 2.",

@@ -5,6 +5,11 @@ import { z } from "zod";
 const envSchema = z.object({
   // Daemon HTTP server (REST API for monitors/tmux/health, plus Hermes webhook).
   PORT: z.coerce.number().default(8787),
+  // Bind hostname for the local REST API. Loopback by default — the API
+  // can spawn tmux sessions and inject keystrokes, so we never want it on
+  // a public interface unless the operator opts in. Set to "0.0.0.0" only
+  // when you need cross-machine access AND have OVERWATCH_API_TOKEN set.
+  OVERWATCH_LISTEN_HOST: z.string().default("127.0.0.1"),
 
   // Provider auth.
   ANTHROPIC_API_KEY: z.string().optional(),

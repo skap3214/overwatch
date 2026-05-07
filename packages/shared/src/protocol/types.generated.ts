@@ -9,7 +9,9 @@
 /**
  * Top-level wrapper for any wire message. The receiver validates this shape first, then validates `payload` against the schema selected by `kind`.
  */
-export interface Envelope {
+export type Envelope = {
+  [k: string]: unknown;
+} & {
   /**
    * MAJOR.MINOR — receivers refuse mismatched majors during the client-ready / bot-ready handshake.
    */
@@ -27,7 +29,7 @@ export interface Envelope {
    */
   timestamp: string;
   /**
-   * Per-session HMAC token. Required on every message except the initial pairing exchange.
+   * Per-session HMAC token. Required only on `harness_command` envelopes (orchestrator → daemon). Daemon-originated `harness_event` envelopes are authenticated end-to-end by the relay's ws/host upgrade and don't carry the per-session token. Phone↔orchestrator `server_message` envelopes flow over the Daily data channel which has its own auth, so they don't carry it either.
    */
   session_token?: string;
   /**
@@ -36,14 +38,14 @@ export interface Envelope {
   payload: {
     [k: string]: unknown;
   };
-}
+};
 
 // ───────────────────── harness-command.schema.json ─────────────────────
 
 /**
- * Discriminated union of commands sent from the cloud orchestrator to the Mac session-host daemon. The daemon's command allowlist enforces that only these three kinds are accepted — anything else is rejected and audit-logged. Only user-initiated input (voice or typed) ever produces a submit_with_steer or cancel; background events route through the registry instead.
+ * Discriminated union of commands sent from the cloud orchestrator to the Mac session-host daemon. The daemon's command allowlist enforces that only these kinds are accepted — anything else is rejected and audit-logged. Only user-initiated input (voice or typed) ever produces a submit_with_steer or cancel; background events route through the registry instead.
  */
-export type HarnessCommand = SubmitText | SubmitWithSteer | Cancel;
+export type HarnessCommand = SubmitText | SubmitWithSteer | Cancel | ManageMonitor;
 export type SubmitText = Common & {
   kind: 'submit_text';
   payload: {
@@ -67,6 +69,24 @@ export type Cancel = Common & {
      * The in-flight turn to cancel.
      */
     target_correlation_id: string;
+  };
+};
+export type ManageMonitor = Common & {
+  kind: 'manage_monitor';
+  payload: {
+    /**
+     * Client-generated request id echoed by monitor_action_result.
+     */
+    request_id: string;
+    action: 'list' | 'get' | 'create' | 'update' | 'delete' | 'pause' | 'resume' | 'run_now' | 'list_runs' | 'read_run';
+    monitor_id?: string;
+    run_id?: string;
+    /**
+     * Provider/source-specific monitor input.
+     */
+    input?: {
+      [k: string]: unknown;
+    };
   };
 };
 
@@ -95,6 +115,8 @@ export type HarnessEvent =
   | SessionEnd
   | ErrorEvent
   | CancelConfirmed
+  | AgentBusy
+  | AgentIdle
   | ProviderEvent;
 export type SessionInit = Common & {
   type: 'session_init';
@@ -150,6 +172,14 @@ export type ErrorEvent = Common & {
 export type CancelConfirmed = Common & {
   type: 'cancel_confirmed';
 };
+export type AgentBusy = Common & {
+  type: 'agent_busy';
+  phase: 'compaction' | 'tool' | 'system';
+  reason?: string;
+};
+export type AgentIdle = Common & {
+  type: 'agent_idle';
+};
 export type ProviderEvent = Common & {
   type: 'provider_event';
   /**
@@ -194,6 +224,10 @@ export type ServerMessage =
   | UserText
   | HarnessEventForUI
   | HarnessStateSnapshot
+  | HarnessSnapshot
+  | MonitorSnapshot
+  | SkillsSnapshot
+  | MonitorActionResult
   | InterruptIntent
   | Notification
   | ErrorResponse;
@@ -225,6 +259,105 @@ export interface HarnessStateSnapshot {
   active_correlation_id?: string;
 }
 /**
+ * Mobile-facing harness/provider snapshot. Superset of harness_state; harness_state remains for inference-gate compatibility.
+ */
+export interface HarnessSnapshot {
+  type: 'harness_snapshot';
+  active_provider_id: string;
+  active_target: string;
+  capabilities: HarnessCapabilities;
+  providers: AgentProviderInfo[];
+  in_flight: boolean;
+  active_correlation_id?: string;
+}
+export interface HarnessCapabilities {
+  hasNativeCron: boolean;
+  hasNativeSkills: boolean;
+  hasNativeMemory: boolean;
+  hasSessionContinuity: boolean;
+  emitsReasoning: boolean;
+  voiceConvention: 'soul-md' | 'instructions-prefix' | 'none';
+}
+export interface AgentProviderInfo {
+  id: string;
+  name: string;
+  tagline: string;
+  description: string;
+  capabilities: HarnessCapabilities;
+  installed: boolean;
+  installInstruction?: string;
+}
+/**
+ * Mobile-facing monitor list plus source/action metadata for capability-aware controls.
+ */
+export interface MonitorSnapshot {
+  type: 'monitor_snapshot';
+  monitors: ScheduledMonitor[];
+  actions: MonitorActionMetadata;
+}
+export interface ScheduledMonitor {
+  id: string;
+  title?: string;
+  scheduleLabel?: string;
+  nextRunAt?: string | null;
+  lastFiredAt?: string | null;
+  recurring?: boolean;
+  enabled?: boolean;
+  state?: string;
+  lastStatus?: 'ok' | 'error' | null;
+  lastError?: string | null;
+  paused?: boolean;
+  source?: 'local' | 'hermes';
+  [k: string]: unknown;
+}
+export interface MonitorActionMetadata {
+  source: 'local' | 'hermes';
+  provider_id: string;
+  can_create: boolean;
+  can_edit: boolean;
+  can_delete: boolean;
+  can_pause: boolean;
+  can_resume: boolean;
+  can_run_now: boolean;
+  supports_run_history: boolean;
+  unsupported_reason?: string;
+}
+/**
+ * Mobile-facing active skills snapshot for providers with native skill surfaces.
+ */
+export interface SkillsSnapshot {
+  type: 'skills_snapshot';
+  provider_id: string;
+  skills: ActiveSkill[];
+}
+export interface ActiveSkill {
+  name: string;
+  description: string;
+  category: string;
+  enabled: boolean;
+  version?: string;
+  [k: string]: unknown;
+}
+/**
+ * Correlated response to a mobile monitor_action / daemon manage_monitor command.
+ */
+export interface MonitorActionResult {
+  type: 'monitor_action_result';
+  request_id: string;
+  ok: boolean;
+  action?: 'list' | 'get' | 'create' | 'update' | 'delete' | 'pause' | 'resume' | 'run_now' | 'list_runs' | 'read_run';
+  monitor?: ScheduledMonitor;
+  monitors?: ScheduledMonitor[];
+  runs?: {
+    [k: string]: unknown;
+  }[];
+  content?: string;
+  error?: {
+    code: string;
+    message: string;
+  };
+}
+/**
  * PTT press from mobile. Hint to the orchestrator to begin the audio_stopped phase early. Not authoritative — the actual cancellation only happens once a transcript or user_text is received.
  */
 export interface InterruptIntent {
@@ -239,6 +372,12 @@ export interface Notification {
   title: string;
   body: string;
   kind: string;
+  created_at?: string;
+  speakable_text?: string;
+  status?: string;
+  source?: {
+    [k: string]: unknown;
+  };
   metadata?: {
     [k: string]: unknown;
   };

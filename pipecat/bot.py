@@ -6,7 +6,6 @@ Re-exports the canonical `bot(runner_args)` entrypoint from
 
 from overwatch_pipeline.bot import bot  # noqa: F401
 
-
 if __name__ == "__main__":  # pragma: no cover
     from pipecat.runner.run import main
 

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { PiCodingAgentHarness } from "../pi-coding-agent.js";
+import { getPinnedPiCodingAgentGlobalInstallCommand } from "../../pinned-pi-coding-agent.js";
 import type { AgentProvider } from "./types.js";
 
 function detect(): boolean {
@@ -35,6 +36,6 @@ export const piCodingAgentProvider: AgentProvider = {
     voiceConvention: "instructions-prefix",
   },
   detect,
-  installInstruction: "npm install -g @mariozechner/pi-coding-agent",
+  installInstruction: getPinnedPiCodingAgentGlobalInstallCommand(),
   build: () => new PiCodingAgentHarness(),
 };

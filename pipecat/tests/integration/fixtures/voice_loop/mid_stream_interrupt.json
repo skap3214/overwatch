@@ -1,0 +1,14 @@
+{
+  "name": "mid_stream_interrupt",
+  "input": [
+    { "kind": "user_text", "text": "tell me a story" },
+    { "kind": "harness_event", "type": "text_delta", "text": "Once " },
+    { "kind": "harness_event", "type": "text_delta", "text": "upon " },
+    { "kind": "client_message", "type": "interrupt_intent" }
+  ],
+  "expect": {
+    "command_sequence": ["submit_text"],
+    "downstream_contains": ["LLMFullResponseStartFrame", "LLMTextFrame"],
+    "held_user_input": false
+  }
+}

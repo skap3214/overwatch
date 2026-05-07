@@ -15,6 +15,7 @@ import {
   type GatewayStatus,
 } from "../gateway-state.js";
 import { printPairingDetails, runGateway } from "../gateway-runtime.js";
+import { loadConfig } from "../config.js";
 
 const LAUNCHD_LABEL = "dev.overwatch.gateway";
 
@@ -113,14 +114,18 @@ function qrPayload(
   status: GatewayStatus,
   pairing: { userId: string; pairingToken: string },
 ): string {
+  const config = loadConfig();
   // Pairing payload for the voice/harness-bridge overhaul:
   //   r = relay URL (the phone POSTs to /api/sessions/start here)
   //   u = userId    (used by phone, daemon, and orchestrator to identify a channel)
   //   t = pairingToken (long-term shared secret; phone derives a per-session HMAC)
+  //   tts = user's configured TTS provider from ~/.overwatch/config.json
   return JSON.stringify({
     r: status.relayUrl,
     u: pairing.userId,
     t: pairing.pairingToken,
+    stt: config.sttProvider ?? "deepgram",
+    tts: config.ttsProvider ?? "cartesia",
   });
 }
 
@@ -169,6 +174,8 @@ export function printGatewayInfo(status = readGatewayStatus()): boolean {
   // even when only the status is loaded.
   const pairing = loadOrCreatePairing();
   printPairingDetails(pairing.userId, qrPayload(status, pairing));
+  const gwConfig = loadConfig();
+  console.log(chalk.dim(`STT: ${gwConfig.sttProvider ?? "deepgram"} · TTS: ${gwConfig.ttsProvider ?? "cartesia"}`));
   console.log(chalk.dim(`Relay: ${status.relayUrl}`));
   console.log(chalk.dim(`Status updated: ${status.updatedAt}`));
   console.log("");
@@ -211,7 +218,10 @@ export function uninstallGatewayService(): void {
 export function startGatewayService(): void {
   requireMacos();
   const path = plistPath();
-  if (!existsSync(path)) installGatewayService();
+  // Always rewrite the launchd plist from the CLI currently being invoked.
+  // Installed users can move between a copied ~/.overwatch/app checkout and a
+  // live repo checkout; keeping an old plist silently starts the wrong runtime.
+  installGatewayService();
   runLaunchctl(["bootout", launchdTarget(), path], false);
   runLaunchctl(["bootstrap", launchdTarget(), path], true);
   runLaunchctl(["enable", `${launchdTarget()}/${LAUNCHD_LABEL}`], false);

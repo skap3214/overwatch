@@ -12,6 +12,8 @@
     { "$ref": "#/$defs/SessionEnd" },
     { "$ref": "#/$defs/ErrorEvent" },
     { "$ref": "#/$defs/CancelConfirmed" },
+    { "$ref": "#/$defs/AgentBusy" },
+    { "$ref": "#/$defs/AgentIdle" },
     { "$ref": "#/$defs/ProviderEvent" }
   ],
   "$defs": {
@@ -148,6 +150,34 @@
           "description": "Emitted by the daemon after the harness has acknowledged cancellation for the correlation_id. Required by the cancellation contract.",
           "properties": {
             "type": { "const": "cancel_confirmed" }
+          }
+        }
+      ]
+    },
+    "AgentBusy": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "required": ["type", "phase"],
+          "description": "Adapter is doing non-turn work and must not receive new harness commands. Local audio interruption is still allowed.",
+          "properties": {
+            "type": { "const": "agent_busy" },
+            "phase": { "enum": ["compaction", "tool", "system"] },
+            "reason": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "AgentIdle": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "required": ["type"],
+          "description": "Clears a prior agent_busy state and allows pending user input admission.",
+          "properties": {
+            "type": { "const": "agent_idle" }
           }
         }
       ]

@@ -8,10 +8,13 @@ from .generated.envelope_schema import Envelope
 from .generated.harness_command_schema import (
     Cancel,
     HarnessCommand,
+    ManageMonitor,
     SubmitText,
     SubmitWithSteer,
 )
 from .generated.harness_event_schema import (
+    AgentBusy,
+    AgentIdle,
     AssistantMessage,
     CancelConfirmed,
     ErrorEvent,
@@ -26,12 +29,21 @@ from .generated.harness_event_schema import (
     ToolLifecycle,
 )
 from .generated.server_message_schema import (
+    ActiveSkill,
+    AgentProviderInfo,
     ErrorResponse,
+    HarnessCapabilities,
     HarnessEventForUI,
+    HarnessSnapshot,
     HarnessStateSnapshot,
     InterruptIntent,
+    MonitorActionMetadata,
+    MonitorActionResult,
+    MonitorSnapshot,
     Notification,
+    ScheduledMonitor,
     ServerMessage,
+    SkillsSnapshot,
     UserText,
 )
 
@@ -46,6 +58,7 @@ __all__ = [
     "SubmitText",
     "SubmitWithSteer",
     "Cancel",
+    "ManageMonitor",
     # HarnessEvent union + variants
     "HarnessEvent",
     "SessionInit",
@@ -58,12 +71,23 @@ __all__ = [
     "Subtype",
     "ErrorEvent",
     "CancelConfirmed",
+    "AgentBusy",
+    "AgentIdle",
     "ProviderEvent",
     # ServerMessage union + variants
     "ServerMessage",
     "UserText",
     "HarnessEventForUI",
     "HarnessStateSnapshot",
+    "HarnessSnapshot",
+    "HarnessCapabilities",
+    "AgentProviderInfo",
+    "MonitorSnapshot",
+    "ScheduledMonitor",
+    "MonitorActionMetadata",
+    "SkillsSnapshot",
+    "ActiveSkill",
+    "MonitorActionResult",
     "InterruptIntent",
     "Notification",
     "ErrorResponse",

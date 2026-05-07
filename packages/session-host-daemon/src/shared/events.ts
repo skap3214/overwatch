@@ -42,6 +42,13 @@ export type AdapterEvent =
     }
   | { type: "error"; message: string; raw: unknown }
   | { type: "cancel_confirmed"; raw?: unknown }
+  | {
+      type: "agent_busy";
+      phase: "compaction" | "tool" | "system";
+      reason?: string;
+      raw: unknown;
+    }
+  | { type: "agent_idle"; raw: unknown }
   // Tier 2 — provider-specific passthrough
   | {
       type: "provider_event";

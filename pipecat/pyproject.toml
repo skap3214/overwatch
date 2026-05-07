@@ -5,7 +5,7 @@ description = "Overwatch cloud orchestrator — pipecat pipeline for the voice +
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "pipecat-ai[daily,deepgram,cartesia,silero,smart-turn,openai,webrtc,runner]>=0.0.94",
+    "pipecat-ai[daily,deepgram,cartesia,xai,silero,smart-turn,openai,webrtc,runner]>=0.0.94",
     "pipecatcloud>=0.4.4",
     "pydantic>=2.13",
     "loguru>=0.7",

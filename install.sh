@@ -161,16 +161,26 @@ refresh_npm_path() {
 # a package that publishes ~daily, an unpinned `npm install -g <pkg>` walks
 # back through hundreds of versions and can hang for minutes.
 get_pinned_pi_version() {
-  local pkg_json="$INSTALL_DIR/package.json"
-  [ -f "$pkg_json" ] || { echo ""; return; }
-  node -e "
-    try {
-      const pkg = require('$pkg_json');
-      const v = (pkg.dependencies && pkg.dependencies['@mariozechner/pi-coding-agent']) ||
-                (pkg.devDependencies && pkg.devDependencies['@mariozechner/pi-coding-agent']);
-      process.stdout.write(v ? String(v).replace(/^[\\^~]/, '') : '');
-    } catch { process.stdout.write(''); }
-  " 2>/dev/null
+  # Pin matches packages/session-host-daemon (where the harness depends on pi).
+  local pkg_json v
+  for pkg_json in \
+    "$INSTALL_DIR/packages/session-host-daemon/package.json" \
+    "$INSTALL_DIR/package.json"; do
+    [ -f "$pkg_json" ] || continue
+    v="$(node -e '
+      try {
+        const pkg = require(process.argv[1]);
+        const v = (pkg.dependencies && pkg.dependencies["@mariozechner/pi-coding-agent"]) ||
+                  (pkg.devDependencies && pkg.devDependencies["@mariozechner/pi-coding-agent"]);
+        process.stdout.write(v ? String(v).replace(/^[\^~]/, "") : "");
+      } catch { process.stdout.write(""); }
+    ' "$pkg_json" 2>/dev/null)"
+    if [ -n "$v" ]; then
+      echo "$v"
+      return
+    fi
+  done
+  echo ""
 }
 
 install_global_pi() {

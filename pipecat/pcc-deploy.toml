@@ -4,9 +4,12 @@ region = "us-west"
 
 [scaling]
 # Keep one warm instance so Pipecat Cloud validation completes and so the
-# first session doesn't pay the full cold-start tax.
+# first session doesn't pay the full cold-start tax. max_agents is set
+# generously for dev so transient session leaks (failed connect → bot still
+# in the Daily room until 5-min idle timeout) don't cap the agent during
+# testing.
 min_agents = 1
-max_agents = 4
+max_agents = 20
 
 [build]
 context_dir = "."

@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from enum import Enum
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
@@ -61,11 +62,48 @@ class Cancel(Common):
     payload: Payload2
 
 
-class HarnessCommand(RootModel[SubmitText | SubmitWithSteer | Cancel]):
-    root: Annotated[
-        SubmitText | SubmitWithSteer | Cancel,
+class Action(Enum):
+    list = "list"
+    get = "get"
+    create = "create"
+    update = "update"
+    delete = "delete"
+    pause = "pause"
+    resume = "resume"
+    run_now = "run_now"
+    list_runs = "list_runs"
+    read_run = "read_run"
+
+
+class Payload3(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    request_id: Annotated[
+        str,
         Field(
-            description="Discriminated union of commands sent from the cloud orchestrator to the Mac session-host daemon. The daemon's command allowlist enforces that only these three kinds are accepted — anything else is rejected and audit-logged. Only user-initiated input (voice or typed) ever produces a submit_with_steer or cancel; background events route through the registry instead.",
+            description="Client-generated request id echoed by monitor_action_result."
+        ),
+    ]
+    action: Action
+    monitor_id: str | None = None
+    run_id: str | None = None
+    input: Annotated[
+        dict[str, Any] | None,
+        Field(description="Provider/source-specific monitor input."),
+    ] = None
+
+
+class ManageMonitor(Common):
+    kind: Literal["manage_monitor"]
+    payload: Payload3
+
+
+class HarnessCommand(RootModel[SubmitText | SubmitWithSteer | Cancel | ManageMonitor]):
+    root: Annotated[
+        SubmitText | SubmitWithSteer | Cancel | ManageMonitor,
+        Field(
+            description="Discriminated union of commands sent from the cloud orchestrator to the Mac session-host daemon. The daemon's command allowlist enforces that only these kinds are accepted — anything else is rejected and audit-logged. Only user-initiated input (voice or typed) ever produces a submit_with_steer or cancel; background events route through the registry instead.",
             title="HarnessCommand",
         ),
     ]

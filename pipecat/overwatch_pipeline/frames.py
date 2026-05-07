@@ -31,6 +31,21 @@ class UserTextInputFrame(DataFrame):
 
 
 @dataclass
+class MonitorActionFrame(DataFrame):
+    """Mobile UI monitor management action.
+
+    This is not user-turn inference. The bridge translates it directly to a
+    manage_monitor HarnessCommand and waits for a correlated result snapshot.
+    """
+
+    request_id: str = ""
+    action: str = ""
+    monitor_id: str | None = None
+    run_id: str | None = None
+    input: dict | None = None
+
+
+@dataclass
 class HarnessEventFrame(DataFrame):
     """A typed harness event arriving from the daemon via the adapter client.
 

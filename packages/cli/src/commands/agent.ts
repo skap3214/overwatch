@@ -14,6 +14,7 @@ import {
   disableHermesPlugin,
   getHermesStatus,
 } from "../hermes-config.js";
+import { getPinnedPiCodingAgentGlobalInstallCommand } from "../pinned-pi-coding-agent.js";
 
 interface ProviderInfo {
   id: string;
@@ -73,7 +74,7 @@ async function loadProviders(): Promise<ProviderInfo[]> {
       description: "Library-based harness shipped with Overwatch.",
       capabilities: {},
       installed: false,
-      installInstruction: "npm install -g @mariozechner/pi-coding-agent",
+      installInstruction: getPinnedPiCodingAgentGlobalInstallCommand(),
     },
     {
       id: "claude-code-cli",

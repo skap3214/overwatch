@@ -64,6 +64,31 @@ export type ScheduledMonitor = {
   source?: "local" | "hermes";
 };
 
+export type MonitorActionName =
+  | "list"
+  | "get"
+  | "create"
+  | "update"
+  | "delete"
+  | "pause"
+  | "resume"
+  | "run_now"
+  | "list_runs"
+  | "read_run";
+
+export type MonitorActionMetadata = {
+  source: "local" | "hermes";
+  provider_id: string;
+  can_create: boolean;
+  can_edit: boolean;
+  can_delete: boolean;
+  can_pause: boolean;
+  can_resume: boolean;
+  can_run_now: boolean;
+  supports_run_history: boolean;
+  unsupported_reason?: string;
+};
+
 export type ActiveSkill = {
   name: string;
   description: string;

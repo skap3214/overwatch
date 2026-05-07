@@ -8,6 +8,7 @@ interface ClaudeCliHarnessOptions {
   extraArgs?: string[];
   systemPrompt?: string;
   catchAllLogger?: (event: unknown) => void;
+  spawnImpl?: typeof spawn;
 }
 
 const DEFAULT_SYSTEM_PROMPT = `You are Overwatch, a voice-controlled orchestrator for tmux-hosted coding sessions. You help the user manage and coordinate Claude Code and other agent sessions running in tmux panes.
@@ -179,12 +180,25 @@ export class ClaudeCodeCliHarness implements OrchestratorHarness {
   private readonly extraArgs: string[];
   private readonly systemPrompt: string;
   private readonly catchAllLogger?: (event: unknown) => void;
+  private readonly spawnImpl: typeof spawn;
+  /**
+   * Session id captured from the first turn's `system init` event. Passed
+   * back as `--resume <id>` on every subsequent turn so Claude Code's
+   * native session-resume mechanism preserves conversation history. Without
+   * this, `claude -p` is a one-shot per turn — no memory at all.
+   *
+   * Sessions in Claude Code are global to the process working directory by
+   * default. We rely on Claude's native persistence (under
+   * `.claude/sessions/`) rather than tracking history ourselves.
+   */
+  private resumeSessionId: string | undefined;
 
   constructor(options: ClaudeCliHarnessOptions = {}) {
     this.claudePath = options.claudePath ?? "claude";
     this.extraArgs = options.extraArgs ?? [];
     this.systemPrompt = options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
     this.catchAllLogger = options.catchAllLogger;
+    this.spawnImpl = options.spawnImpl ?? spawn;
   }
 
   async *runTurn(request: HarnessTurnRequest): AsyncIterable<AdapterEvent> {
@@ -197,11 +211,14 @@ export class ClaudeCodeCliHarness implements OrchestratorHarness {
       "--dangerously-skip-permissions",
       "--system-prompt",
       this.systemPrompt,
+      ...(this.resumeSessionId
+        ? ["--resume", this.resumeSessionId]
+        : []),
       ...this.extraArgs,
       request.prompt,
     ];
 
-    const child = spawn(this.claudePath, args, {
+    const child = this.spawnImpl(this.claudePath, args, {
       cwd: request.cwd,
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
@@ -241,6 +258,15 @@ export class ClaudeCodeCliHarness implements OrchestratorHarness {
       this.catchAllLogger?.(parsed);
 
       for (const event of mapClaudeJsonLine(parsed)) {
+        // Capture the session_id Claude assigns on its first turn so we
+        // can pass --resume on every subsequent turn.
+        if (
+          event.type === "session_init" &&
+          typeof event.session_id === "string" &&
+          event.session_id.length > 0
+        ) {
+          this.resumeSessionId = event.session_id;
+        }
         yield event;
       }
     }
@@ -262,5 +288,10 @@ export class ClaudeCodeCliHarness implements OrchestratorHarness {
         raw: { exitCode, stderr },
       };
     }
+  }
+
+  /** Test hook: drop the captured session id so a subsequent runTurn starts fresh. */
+  resetSession(): void {
+    this.resumeSessionId = undefined;
   }
 }

@@ -1,5 +1,5 @@
 /**
- * Session token derivation — pure HMAC, no React Native deps.
+ * Session token derivation — pure HMAC, no native deps.
  *
  * Lives in services/ (not stores/) so it can be imported from a Node-only
  * test runner that exercises the cross-runtime contract with the daemon's
@@ -8,9 +8,15 @@
  *
  * Format: `{session_id}|{expires_at}|{hex_sig}` where
  *   hex_sig = HMAC-SHA256(pairing_token, `{session_id}|{expires_at}`)
+ *
+ * Implementation note: we use @noble/hashes (pure JS) instead of Web Crypto
+ * because RN/Hermes does not expose `crypto.subtle.importKey + sign("HMAC")`
+ * by default. Wire-compatible with Node `crypto.createHmac` and Python
+ * `hmac.new(..., sha256)` — verified by tests/cross-runtime-token-contract.
  */
 
-import { Buffer } from "buffer";
+import { hmac } from "@noble/hashes/hmac.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 
 export async function deriveSessionToken(
   pairingToken: string,
@@ -19,25 +25,20 @@ export async function deriveSessionToken(
 ): Promise<string> {
   const expiresAt = Math.floor(Date.now() / 1000) + ttlSeconds;
   const message = `${sessionId}|${expiresAt}`;
-  const signature = await hmacSha256(pairingToken, message);
+  const signature = hmacSha256(pairingToken, message);
   return `${message}|${signature}`;
 }
 
-async function hmacSha256(secret: string, message: string): Promise<string> {
-  // Web Crypto API is available on Hermes (RN 0.72+) and Node.js 20+.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const subtle = (globalThis as any).crypto?.subtle;
-  if (!subtle) {
-    throw new Error("crypto.subtle unavailable — runtime is too old");
-  }
+function hmacSha256(secret: string, message: string): string {
   const enc = new TextEncoder();
-  const key = await subtle.importKey(
-    "raw",
-    enc.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await subtle.sign("HMAC", key, enc.encode(message));
-  return Buffer.from(new Uint8Array(sig)).toString("hex");
+  const sig = hmac(sha256, enc.encode(secret), enc.encode(message));
+  return bytesToHex(sig);
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  let hex = "";
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes[i].toString(16).padStart(2, "0");
+  }
+  return hex;
 }

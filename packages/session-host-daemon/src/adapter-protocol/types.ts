@@ -7,11 +7,19 @@ import type {
   Cancel,
   HarnessCommand,
   HarnessEvent,
+  ManageMonitor,
   SubmitText,
   SubmitWithSteer,
 } from "@overwatch/shared/protocol";
 
-export type { HarnessCommand, HarnessEvent, SubmitText, SubmitWithSteer, Cancel };
+export type {
+  HarnessCommand,
+  HarnessEvent,
+  SubmitText,
+  SubmitWithSteer,
+  Cancel,
+  ManageMonitor,
+};
 
 export interface AdapterProtocolDeps {
   /** Relay URL the daemon connects to (e.g. https://overwatch-relay.soami.workers.dev). */
@@ -34,4 +42,5 @@ export const COMMAND_ALLOWLIST: ReadonlySet<CommandKind> = new Set<CommandKind>(
   "submit_text",
   "submit_with_steer",
   "cancel",
+  "manage_monitor",
 ]);

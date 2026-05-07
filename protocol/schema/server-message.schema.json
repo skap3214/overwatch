@@ -7,11 +7,116 @@
     { "$ref": "#/$defs/UserText" },
     { "$ref": "#/$defs/HarnessEventForUI" },
     { "$ref": "#/$defs/HarnessStateSnapshot" },
+    { "$ref": "#/$defs/HarnessSnapshot" },
+    { "$ref": "#/$defs/MonitorSnapshot" },
+    { "$ref": "#/$defs/SkillsSnapshot" },
+    { "$ref": "#/$defs/MonitorActionResult" },
     { "$ref": "#/$defs/InterruptIntent" },
     { "$ref": "#/$defs/Notification" },
     { "$ref": "#/$defs/ErrorResponse" }
   ],
   "$defs": {
+    "HarnessCapabilities": {
+      "type": "object",
+      "required": [
+        "hasNativeCron",
+        "hasNativeSkills",
+        "hasNativeMemory",
+        "hasSessionContinuity",
+        "emitsReasoning",
+        "voiceConvention"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "hasNativeCron": { "type": "boolean" },
+        "hasNativeSkills": { "type": "boolean" },
+        "hasNativeMemory": { "type": "boolean" },
+        "hasSessionContinuity": { "type": "boolean" },
+        "emitsReasoning": { "type": "boolean" },
+        "voiceConvention": {
+          "enum": ["soul-md", "instructions-prefix", "none"]
+        }
+      }
+    },
+    "AgentProviderInfo": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "tagline",
+        "description",
+        "capabilities",
+        "installed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "tagline": { "type": "string" },
+        "description": { "type": "string" },
+        "capabilities": { "$ref": "#/$defs/HarnessCapabilities" },
+        "installed": { "type": "boolean" },
+        "installInstruction": { "type": "string" }
+      }
+    },
+    "MonitorActionMetadata": {
+      "type": "object",
+      "required": [
+        "source",
+        "provider_id",
+        "can_create",
+        "can_edit",
+        "can_delete",
+        "can_pause",
+        "can_resume",
+        "can_run_now",
+        "supports_run_history"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "source": { "enum": ["local", "hermes"] },
+        "provider_id": { "type": "string" },
+        "can_create": { "type": "boolean" },
+        "can_edit": { "type": "boolean" },
+        "can_delete": { "type": "boolean" },
+        "can_pause": { "type": "boolean" },
+        "can_resume": { "type": "boolean" },
+        "can_run_now": { "type": "boolean" },
+        "supports_run_history": { "type": "boolean" },
+        "unsupported_reason": { "type": "string" }
+      }
+    },
+    "ScheduledMonitor": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "scheduleLabel": { "type": "string" },
+        "nextRunAt": { "type": ["string", "null"] },
+        "lastFiredAt": { "type": ["string", "null"] },
+        "recurring": { "type": "boolean" },
+        "enabled": { "type": "boolean" },
+        "state": { "type": "string" },
+        "lastStatus": { "enum": ["ok", "error", null] },
+        "lastError": { "type": ["string", "null"] },
+        "paused": { "type": "boolean" },
+        "source": { "enum": ["local", "hermes"] }
+      }
+    },
+    "ActiveSkill": {
+      "type": "object",
+      "required": ["name", "description", "category", "enabled"],
+      "additionalProperties": true,
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "version": { "type": "string" }
+      }
+    },
     "UserText": {
       "type": "object",
       "required": ["type", "text"],
@@ -47,6 +152,106 @@
         "active_correlation_id": { "type": "string" }
       }
     },
+    "HarnessSnapshot": {
+      "type": "object",
+      "required": [
+        "type",
+        "active_provider_id",
+        "active_target",
+        "capabilities",
+        "providers",
+        "in_flight"
+      ],
+      "additionalProperties": false,
+      "description": "Mobile-facing harness/provider snapshot. Superset of harness_state; harness_state remains for inference-gate compatibility.",
+      "properties": {
+        "type": { "const": "harness_snapshot" },
+        "active_provider_id": { "type": "string" },
+        "active_target": { "type": "string" },
+        "capabilities": { "$ref": "#/$defs/HarnessCapabilities" },
+        "providers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AgentProviderInfo" }
+        },
+        "in_flight": { "type": "boolean" },
+        "active_correlation_id": { "type": "string" }
+      }
+    },
+    "MonitorSnapshot": {
+      "type": "object",
+      "required": ["type", "monitors", "actions"],
+      "additionalProperties": false,
+      "description": "Mobile-facing monitor list plus source/action metadata for capability-aware controls.",
+      "properties": {
+        "type": { "const": "monitor_snapshot" },
+        "monitors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ScheduledMonitor" }
+        },
+        "actions": { "$ref": "#/$defs/MonitorActionMetadata" }
+      }
+    },
+    "SkillsSnapshot": {
+      "type": "object",
+      "required": ["type", "provider_id", "skills"],
+      "additionalProperties": false,
+      "description": "Mobile-facing active skills snapshot for providers with native skill surfaces.",
+      "properties": {
+        "type": { "const": "skills_snapshot" },
+        "provider_id": { "type": "string" },
+        "skills": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ActiveSkill" }
+        }
+      }
+    },
+    "MonitorActionResult": {
+      "type": "object",
+      "required": ["type", "request_id", "ok"],
+      "additionalProperties": false,
+      "description": "Correlated response to a mobile monitor_action / daemon manage_monitor command.",
+      "properties": {
+        "type": { "const": "monitor_action_result" },
+        "request_id": { "type": "string" },
+        "ok": { "type": "boolean" },
+        "action": {
+          "enum": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete",
+            "pause",
+            "resume",
+            "run_now",
+            "list_runs",
+            "read_run"
+          ]
+        },
+        "monitor": { "$ref": "#/$defs/ScheduledMonitor" },
+        "monitors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ScheduledMonitor" }
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "content": { "type": "string" },
+        "error": {
+          "type": "object",
+          "required": ["code", "message"],
+          "additionalProperties": false,
+          "properties": {
+            "code": { "type": "string" },
+            "message": { "type": "string" }
+          }
+        }
+      }
+    },
     "InterruptIntent": {
       "type": "object",
       "required": ["type"],
@@ -67,6 +272,10 @@
         "title": { "type": "string" },
         "body": { "type": "string" },
         "kind": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "speakable_text": { "type": "string" },
+        "status": { "type": "string" },
+        "source": { "type": "object", "additionalProperties": true },
         "metadata": { "type": "object", "additionalProperties": true }
       }
     },

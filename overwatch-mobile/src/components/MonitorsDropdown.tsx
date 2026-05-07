@@ -48,14 +48,13 @@ function formatLastRun(lastFiredAt: string | null, now: number): string | null {
 export function MonitorsDropdown({ visible, onClose }: Props) {
   const colors = useColors();
   const monitors = useMonitorsStore((s) => s.monitors);
+  const actions = useMonitorsStore((s) => s.actions);
   const [now, setNow] = useState(() => Date.now());
   const [detail, setDetail] = useState<ScheduledMonitor | null>(null);
   const [editing, setEditing] = useState<ScheduledMonitor | null>(null);
   const [creating, setCreating] = useState(false);
 
-  // True if the backend exposes the Hermes-source extensions (in any monitor row).
-  // Drives whether we show "+ New" / detail / paused / error UI.
-  const isHermesMode = monitors.some((m) => m.source === "hermes");
+  const canCreate = actions.can_create;
 
   useEffect(() => {
     if (!visible) return;
@@ -67,10 +66,10 @@ export function MonitorsDropdown({ visible, onClose }: Props) {
   // Don't auto-close — even with zero monitors, in Hermes mode the user can
   // tap "+ New". Local mode keeps original behavior of auto-closing on empty.
   useEffect(() => {
-    if (visible && monitors.length === 0 && !isHermesMode) {
+    if (visible && monitors.length === 0 && !canCreate) {
       onClose();
     }
-  }, [visible, monitors.length, isHermesMode, onClose]);
+  }, [visible, monitors.length, canCreate, onClose]);
 
   return (
     <Modal
@@ -109,7 +108,7 @@ export function MonitorsDropdown({ visible, onClose }: Props) {
               }}
               tintColor={colors.surface}
             >
-              {monitors.length === 0 && !isHermesMode ? (
+              {monitors.length === 0 && !canCreate ? (
                 <View style={{ paddingHorizontal: 18, paddingVertical: 22 }}>
                   <Text
                     style={{
@@ -147,7 +146,7 @@ export function MonitorsDropdown({ visible, onClose }: Props) {
                           paddingHorizontal: 8,
                           paddingVertical: 12,
                           borderBottomWidth:
-                            index === monitors.length - 1 && !isHermesMode ? 0 : 1,
+                            index === monitors.length - 1 && !canCreate ? 0 : 1,
                           borderBottomColor: colors.border,
                           flexDirection: "row",
                           alignItems: "center",
@@ -205,7 +204,7 @@ export function MonitorsDropdown({ visible, onClose }: Props) {
                     );
                   })}
 
-                  {isHermesMode && (
+                  {canCreate && (
                     <Pressable
                       onPress={() => setCreating(true)}
                       style={({ pressed }) => ({
