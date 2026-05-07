@@ -3,9 +3,97 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel
+
+
+class VoiceConvention(Enum):
+    soul_md = "soul-md"
+    instructions_prefix = "instructions-prefix"
+    none = "none"
+
+
+class HarnessCapabilities(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    hasNativeCron: bool
+    hasNativeSkills: bool
+    hasNativeMemory: bool
+    hasSessionContinuity: bool
+    emitsReasoning: bool
+    voiceConvention: VoiceConvention
+
+
+class AgentProviderInfo(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: str
+    name: str
+    tagline: str
+    description: str
+    capabilities: HarnessCapabilities
+    installed: bool
+    installInstruction: str | None = None
+
+
+class Source(Enum):
+    local = "local"
+    hermes = "hermes"
+
+
+class MonitorActionMetadata(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    source: Source
+    provider_id: str
+    can_create: bool
+    can_edit: bool
+    can_delete: bool
+    can_pause: bool
+    can_resume: bool
+    can_run_now: bool
+    supports_run_history: bool
+    unsupported_reason: str | None = None
+
+
+class LastStatus(Enum):
+    ok = "ok"
+    error = "error"
+    NoneType_None = None
+
+
+class ScheduledMonitor(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    id: str
+    title: str | None = None
+    scheduleLabel: str | None = None
+    nextRunAt: str | None = None
+    lastFiredAt: str | None = None
+    recurring: bool | None = None
+    enabled: bool | None = None
+    state: str | None = None
+    lastStatus: LastStatus | None = None
+    lastError: str | None = None
+    paused: bool | None = None
+    source: Source | None = None
+
+
+class ActiveSkill(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    name: str
+    description: str
+    category: str
+    enabled: bool
+    version: str | None = None
 
 
 class UserText(BaseModel):
@@ -49,6 +137,89 @@ class HarnessStateSnapshot(BaseModel):
     active_correlation_id: str | None = None
 
 
+class HarnessSnapshot(BaseModel):
+    """
+    Mobile-facing harness/provider snapshot. Superset of harness_state; harness_state remains for inference-gate compatibility.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    type: Literal["harness_snapshot"]
+    active_provider_id: str
+    active_target: str
+    capabilities: HarnessCapabilities
+    providers: list[AgentProviderInfo]
+    in_flight: bool
+    active_correlation_id: str | None = None
+
+
+class MonitorSnapshot(BaseModel):
+    """
+    Mobile-facing monitor list plus source/action metadata for capability-aware controls.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    type: Literal["monitor_snapshot"]
+    monitors: list[ScheduledMonitor]
+    actions: MonitorActionMetadata
+
+
+class SkillsSnapshot(BaseModel):
+    """
+    Mobile-facing active skills snapshot for providers with native skill surfaces.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    type: Literal["skills_snapshot"]
+    provider_id: str
+    skills: list[ActiveSkill]
+
+
+class Action(Enum):
+    list = "list"
+    get = "get"
+    create = "create"
+    update = "update"
+    delete = "delete"
+    pause = "pause"
+    resume = "resume"
+    run_now = "run_now"
+    list_runs = "list_runs"
+    read_run = "read_run"
+
+
+class Error(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    code: str
+    message: str
+
+
+class MonitorActionResult(BaseModel):
+    """
+    Correlated response to a mobile monitor_action / daemon manage_monitor command.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    type: Literal["monitor_action_result"]
+    request_id: str
+    ok: bool
+    action: Action | None = None
+    monitor: ScheduledMonitor | None = None
+    monitors: list[ScheduledMonitor] | None = None
+    runs: list[dict[str, Any]] | None = None
+    content: str | None = None
+    error: Error | None = None
+
+
 class InterruptIntent(BaseModel):
     """
     PTT press from mobile. Hint to the orchestrator to begin the audio_stopped phase early. Not authoritative — the actual cancellation only happens once a transcript or user_text is received.
@@ -73,10 +244,14 @@ class Notification(BaseModel):
     title: str
     body: str
     kind: str
+    created_at: AwareDatetime | None = None
+    speakable_text: str | None = None
+    status: str | None = None
+    source: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
 
 
-class Error(BaseModel):
+class Error1(BaseModel):
     code: str
     message: str
 
@@ -91,7 +266,7 @@ class ErrorResponse(BaseModel):
     )
     type: Literal["error_response"]
     request_id: str
-    error: Error
+    error: Error1
 
 
 class ServerMessage(
@@ -99,6 +274,10 @@ class ServerMessage(
         UserText
         | HarnessEventForUI
         | HarnessStateSnapshot
+        | HarnessSnapshot
+        | MonitorSnapshot
+        | SkillsSnapshot
+        | MonitorActionResult
         | InterruptIntent
         | Notification
         | ErrorResponse
@@ -108,6 +287,10 @@ class ServerMessage(
         UserText
         | HarnessEventForUI
         | HarnessStateSnapshot
+        | HarnessSnapshot
+        | MonitorSnapshot
+        | SkillsSnapshot
+        | MonitorActionResult
         | InterruptIntent
         | Notification
         | ErrorResponse,

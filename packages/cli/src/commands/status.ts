@@ -102,7 +102,7 @@ export async function statusCommand(): Promise<void> {
     `  Agent:    ${agentConfigured ? chalk.green("configured") : chalk.red("not set")}`
   );
   console.log(
-    `  Voice:    ${chalk.dim("cloud orchestrator (pipecat) — Deepgram + Cartesia handled cloud-side")}`,
+    `  Voice:    STT ${chalk.green(config.sttProvider ?? "deepgram")} · TTS ${chalk.green(config.ttsProvider ?? "cartesia")}`,
   );
   console.log(
     `  Terminal: ${terminalConfigured ? chalk.green("configured") : chalk.red("not set")} (tmux auto-start)`,

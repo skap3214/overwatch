@@ -26,12 +26,14 @@ from .protocol import (
     Cancel,
     Envelope,
     HarnessEvent,
+    ManageMonitor,
+    ServerMessage,
     SubmitText,
     SubmitWithSteer,
 )
 from .protocol.generated.envelope_schema import Kind
 
-HarnessCommandVariant = SubmitText | SubmitWithSteer | Cancel
+HarnessCommandVariant = SubmitText | SubmitWithSteer | Cancel | ManageMonitor
 HarnessStateCallback = Callable[[dict], Awaitable[None]]
 
 
@@ -46,6 +48,8 @@ class HarnessAdapterClient(Protocol):
     async def submit(self, command: HarnessCommandVariant) -> None: ...
 
     def events(self) -> AsyncIterator[HarnessEvent]: ...
+
+    def server_messages(self) -> AsyncIterator[ServerMessage]: ...
 
     async def close(self) -> None: ...
 
@@ -65,17 +69,21 @@ class RelayClient:
         *,
         relay_url: str,
         user_id: str,
-        pairing_token: str,
+        ws_auth_token: str,
         session_token: str,
         reconnect_delay: float = 2.0,
         on_harness_state: HarnessStateCallback | None = None,
     ) -> None:
+        # ws_auth_token is the relay-minted short-lived orchestrator_token
+        # used to authenticate this WebSocket upgrade. It is NOT the
+        # long-term pairing_token — see relay/src/index.ts and
+        # docs/architecture/009-auth-pairing-and-tokens.md.
         # Convert https:// to wss:// (and http:// to ws://) so the relay's
         # CF Worker can complete the WebSocket upgrade.
         ws_base = relay_url.replace("https://", "wss://").replace("http://", "ws://")
         self._url = (
             f"{ws_base.rstrip('/')}/api/users/{user_id}/ws/orchestrator"
-            f"?token={pairing_token}"
+            f"?token={ws_auth_token}"
         )
         self._user_id = user_id
         self._session_token = session_token
@@ -84,6 +92,7 @@ class RelayClient:
         self._socket: websockets.ClientConnection | None = None
         self._send_lock = asyncio.Lock()
         self._event_queue: asyncio.Queue[HarnessEvent] = asyncio.Queue()
+        self._server_message_queue: asyncio.Queue[ServerMessage] = asyncio.Queue()
         self._reader_task: asyncio.Task[None] | None = None
         self._stopped = False
 
@@ -150,6 +159,13 @@ class RelayClient:
                     except Exception as exc:  # noqa: BLE001
                         logger.warning("relay-client.invalid_event", err=str(exc))
                 elif kind == "server_message":
+                    try:
+                        server_message = ServerMessage.model_validate(payload)
+                        await self._server_message_queue.put(server_message)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("relay-client.invalid_server_message", err=str(exc))
+                        continue
+
                     # Daemon sends a `harness_state` snapshot on connect so the
                     # orchestrator can seed its inference-gate state without
                     # waiting for the first event flow.
@@ -173,6 +189,14 @@ class RelayClient:
             while not self._stopped:
                 event = await self._event_queue.get()
                 yield event
+
+        return _iter()
+
+    def server_messages(self) -> AsyncIterator[ServerMessage]:
+        async def _iter() -> AsyncIterator[ServerMessage]:
+            while not self._stopped:
+                message = await self._server_message_queue.get()
+                yield message
 
         return _iter()
 
@@ -214,6 +238,13 @@ class LocalUDSClient:
 
     def events(self) -> AsyncIterator[HarnessEvent]:  # pragma: no cover
         async def _iter() -> AsyncIterator[HarnessEvent]:
+            if False:  # pragma: no cover
+                yield  # type: ignore[unreachable]
+
+        return _iter()
+
+    def server_messages(self) -> AsyncIterator[ServerMessage]:  # pragma: no cover
+        async def _iter() -> AsyncIterator[ServerMessage]:
             if False:  # pragma: no cover
                 yield  # type: ignore[unreachable]
 

@@ -4,6 +4,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { X } from "lucide-react-native";
 import { useColors } from "../theme";
 import { usePairingStore } from "../stores/pairing-store";
+import type { TTSProvider } from "../stores/pairing-store";
 
 type Props = {
   onClose: () => void;
@@ -14,10 +15,12 @@ interface QRPayload {
   r?: string; // relayUrl
   u?: string; // userId
   t?: string; // pairingToken
+  tts?: TTSProvider;
   // Long keys
   relay?: string;
   user?: string;
   token?: string;
+  ttsProvider?: TTSProvider;
 }
 
 export function QRScanner({ onClose }: Props) {
@@ -31,19 +34,44 @@ export function QRScanner({ onClose }: Props) {
     setScanned(true);
 
     try {
-      const parsed = JSON.parse(data) as QRPayload;
-      const relayUrl = parsed.r ?? parsed.relay;
-      const userId = parsed.u ?? parsed.user;
-      const pairingToken = parsed.t ?? parsed.token;
+      // Tolerate two QR shapes: JSON `{r,u,t}` (what the CLI prints) and a
+      // URL form `overwatch://pair?r=...&u=...&t=...` (future-proof). Reject
+      // anything else cleanly so a stray scan (Wi-Fi QR, etc.) doesn't crash
+      // the scanner.
+      let payload: QRPayload | null = null;
+      const trimmed = data.trim();
+      if (trimmed.startsWith("{")) {
+        payload = JSON.parse(trimmed) as QRPayload;
+      } else if (
+        trimmed.startsWith("overwatch://pair") ||
+        trimmed.startsWith("https://overwatch")
+      ) {
+        const url = new URL(trimmed);
+        payload = {
+          r: url.searchParams.get("r") ?? undefined,
+          u: url.searchParams.get("u") ?? undefined,
+          t: url.searchParams.get("t") ?? undefined,
+          tts: normalizeTTSProvider(url.searchParams.get("tts")),
+        };
+      } else {
+        throw new Error("That QR isn't an Overwatch pairing code");
+      }
 
+      const relayUrl = payload.r ?? payload.relay;
+      const userId = payload.u ?? payload.user;
+      const pairingToken = payload.t ?? payload.token;
+      const ttsProvider = normalizeTTSProvider(payload.tts ?? payload.ttsProvider);
       if (!userId || !pairingToken) {
         throw new Error("Invalid QR payload — missing user or token");
       }
 
-      await setPairing({ relayUrl, userId, pairingToken });
+      await setPairing({ relayUrl, userId, pairingToken, ttsProvider });
       onClose();
     } catch (err) {
-      console.error("[QR] scan error:", err);
+      // Allow the scanner to keep working — re-arm and let the user try again.
+      // We don't surface an alert because cameras emit transient bad reads
+      // mid-focus; the next good frame will succeed.
+      console.warn("[QR] ignored bad scan:", err instanceof Error ? err.message : String(err));
       setScanned(false);
     }
   };
@@ -120,6 +148,10 @@ export function QRScanner({ onClose }: Props) {
       </View>
     </View>
   );
+}
+
+function normalizeTTSProvider(value: unknown): TTSProvider | undefined {
+  return value === "cartesia" || value === "xai" ? value : undefined;
 }
 
 const CORNER_SIZE = 24;

@@ -8,13 +8,19 @@
  *
  * Routes JSON envelopes between them. Text frames only — no binary path.
  *
- * Authentication: each side presents `?token=<pairingToken>` on the WS
- * upgrade. The DO records the first token seen and refuses any later
- * connection that doesn't match. (This is the alpha-grade trust model from
- * plan §7. Hardening = future plan.)
+ * Authentication:
+ *   - ws/host: presents `?token=<pairing_token>` directly. First connection
+ *     seeds the DO's `pairingToken`; subsequent connections must match.
+ *     The pairing token also gets seeded by the relay's
+ *     /api/sessions/start handler (POST /seed) so the orchestrator's
+ *     verification doesn't depend on the daemon connecting first.
  *
- * Replaces the legacy Room DO from the pre-overhaul relay. Phone never
- * connects to a UserChannel — phone uses POST /api/sessions/start only.
+ *   - ws/orchestrator: presents `?token=<orchestrator_token>` where
+ *     orchestrator_token = `{user_id}|{expires_at}|HMAC(pairing_token,
+ *     "orch:{user_id}|{expires_at}")`. The DO verifies the HMAC using its
+ *     stored pairingToken — this lets the relay mint short-lived tokens
+ *     for Pipecat Cloud bots WITHOUT ever exposing the long-term
+ *     pairing_token to PCC.
  */
 
 type Role = "host" | "orchestrator";
@@ -38,6 +44,26 @@ function tryParseControl(message: string): ControlFrame | null {
   return null;
 }
 
+async function hmacSha256Hex(secret: string, message: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(message));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function timingSafeStringEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 export class UserChannel implements DurableObject {
   private alarmScheduled = false;
   private pairingToken: string | null = null;
@@ -58,6 +84,26 @@ export class UserChannel implements DurableObject {
       });
     }
 
+    // POST /seed { pairing_token } — relay calls this from session-start to
+    // ensure the DO has the pairing_token recorded BEFORE PCC starts the
+    // orchestrator. Idempotent for the same value; conflict on mismatch.
+    if (url.pathname.endsWith("/seed") && request.method === "POST") {
+      const body = (await request.json().catch(() => ({}))) as {
+        pairing_token?: string;
+      };
+      if (!body.pairing_token) {
+        return new Response("missing pairing_token", { status: 400 });
+      }
+      const stored = await this._loadPairingToken();
+      if (!stored) {
+        this.pairingToken = body.pairing_token;
+        await this.state.storage.put("pairingToken", body.pairing_token);
+      } else if (stored !== body.pairing_token) {
+        return new Response("pairing token mismatch for user", { status: 409 });
+      }
+      return Response.json({ ok: true });
+    }
+
     const upgradeHeader = request.headers.get("Upgrade");
     if (!upgradeHeader || upgradeHeader.toLowerCase() !== "websocket") {
       return new Response("Expected WebSocket", { status: 426 });
@@ -72,25 +118,41 @@ export class UserChannel implements DurableObject {
       return new Response("Bad role", { status: 400 });
     }
 
-    // Verify pairing token. First connection sets the token; subsequent
-    // connections must match.
     const token = url.searchParams.get("token") ?? "";
     if (!token) {
-      return new Response("Missing pairing token", { status: 401 });
+      return new Response("Missing auth token", { status: 401 });
     }
 
-    const stored =
-      this.pairingToken ??
-      ((await this.state.storage.get("pairingToken")) as string | null);
-
-    if (!stored) {
-      // First connection — accept this token as canonical.
-      this.pairingToken = token;
-      await this.state.storage.put("pairingToken", token);
-    } else if (stored !== token) {
-      return new Response("Invalid pairing token", { status: 403 });
+    if (role === "host") {
+      // ws/host accepts the long-term pairing_token directly.
+      const stored = await this._loadPairingToken();
+      if (!stored) {
+        // First connection — accept this token as canonical.
+        this.pairingToken = token;
+        await this.state.storage.put("pairingToken", token);
+      } else if (stored !== token) {
+        return new Response("Invalid pairing token", { status: 403 });
+      } else {
+        this.pairingToken = stored;
+      }
     } else {
-      this.pairingToken = stored;
+      // ws/orchestrator accepts a short-lived signed orchestrator_token. The
+      // DO must already have the pairing_token (seeded via POST /seed by the
+      // session-start handler, or learned from a prior ws/host connection).
+      const stored = await this._loadPairingToken();
+      if (!stored) {
+        return new Response(
+          "user channel not initialized — seed pairing_token first",
+          { status: 401 },
+        );
+      }
+      const userId = url.searchParams.get("__user_id") ?? "";
+      const valid = await this._verifyOrchestratorToken(stored, userId, token);
+      if (!valid) {
+        return new Response("Invalid or expired orchestrator_token", {
+          status: 403,
+        });
+      }
     }
 
     // Replace existing connection for this role.
@@ -124,7 +186,6 @@ export class UserChannel implements DurableObject {
     ws: WebSocket,
     message: string | ArrayBuffer,
   ): Promise<void> {
-    // Binary frames are not part of the protocol on this channel.
     if (typeof message !== "string") {
       return;
     }
@@ -180,6 +241,34 @@ export class UserChannel implements DurableObject {
     if (remaining > 0) {
       this.ensureAlarm();
     }
+  }
+
+  private async _loadPairingToken(): Promise<string | null> {
+    if (this.pairingToken) return this.pairingToken;
+    const stored = (await this.state.storage.get("pairingToken")) as
+      | string
+      | null;
+    if (stored) this.pairingToken = stored;
+    return stored;
+  }
+
+  private async _verifyOrchestratorToken(
+    pairingToken: string,
+    userId: string,
+    token: string,
+  ): Promise<boolean> {
+    const parts = token.split("|");
+    if (parts.length !== 3) return false;
+    const [tokenUser, expiresStr, sig] = parts;
+    if (tokenUser !== userId) return false;
+    const expires_at = Number.parseInt(expiresStr, 10);
+    if (!Number.isFinite(expires_at)) return false;
+    if (expires_at < Math.floor(Date.now() / 1000)) return false;
+    const expected = await hmacSha256Hex(
+      pairingToken,
+      `orch:${userId}|${expires_at}`,
+    );
+    return timingSafeStringEqual(sig, expected);
   }
 
   private forwardToPeer(sender: WebSocket, message: string): void {

@@ -42,6 +42,7 @@ interface PiCodingAgentHarnessOptions {
   systemPrompt?: string;
   cwd?: string;
   catchAllLogger?: (event: unknown) => void;
+  sessionFactory?: () => Promise<Session>;
 }
 
 type Session = Awaited<ReturnType<typeof createAgentSession>>["session"];
@@ -55,6 +56,7 @@ export class PiCodingAgentHarness implements OrchestratorHarness {
   private readonly systemPrompt: string;
   private readonly defaultCwd: string;
   private readonly catchAllLogger?: (event: unknown) => void;
+  private readonly sessionFactory?: () => Promise<Session>;
   private session: Session | null = null;
   private pendingPrompt: Promise<void> = Promise.resolve();
 
@@ -64,10 +66,15 @@ export class PiCodingAgentHarness implements OrchestratorHarness {
     this.systemPrompt = options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
     this.defaultCwd = options.cwd ?? process.cwd();
     this.catchAllLogger = options.catchAllLogger;
+    this.sessionFactory = options.sessionFactory;
   }
 
   private async ensureSession(): Promise<Session> {
     if (this.session) return this.session;
+    if (this.sessionFactory) {
+      this.session = await this.sessionFactory();
+      return this.session;
+    }
 
     const authStorage = AuthStorage.create();
     if (this.apiKey && !authStorage.get("anthropic")) {
@@ -263,6 +270,21 @@ function mapPiEvent(event: any): AdapterEvent[] {
         raw: event,
       },
     ];
+  }
+
+  if (type === "compaction_start") {
+    return [
+      {
+        type: "agent_busy",
+        phase: "compaction",
+        reason: typeof event.reason === "string" ? event.reason : undefined,
+        raw: event,
+      },
+    ];
+  }
+
+  if (type === "compaction_end") {
+    return [{ type: "agent_idle", raw: event }];
   }
 
   // Tier-2 passthrough for everything else.

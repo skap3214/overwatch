@@ -179,14 +179,32 @@ app.route(
   "/api/v1/tmux",
   createTmuxRouter({
     authToken: process.env.OVERWATCH_API_TOKEN || undefined,
+    bindHost: config.OVERWATCH_LISTEN_HOST,
   }),
 );
 
-console.log(`[daemon] starting on http://localhost:${config.PORT}`);
+console.log(
+  `[daemon] starting on http://${config.OVERWATCH_LISTEN_HOST}:${config.PORT}`,
+);
+if (config.OVERWATCH_LISTEN_HOST !== "127.0.0.1" && !process.env.OVERWATCH_API_TOKEN) {
+  console.warn(
+    "[daemon] WARNING: OVERWATCH_LISTEN_HOST is not loopback and " +
+      "OVERWATCH_API_TOKEN is unset — /api/v1/tmux mutating endpoints are " +
+      "unauthenticated. Anyone reachable on the network can spawn tmux " +
+      "sessions and inject keystrokes. Set OVERWATCH_API_TOKEN immediately.",
+  );
+}
 
-const server = serve({ fetch: app.fetch, port: config.PORT }, (info) => {
-  console.log(`[daemon] listening on http://localhost:${info.port}`);
-});
+const server = serve(
+  {
+    fetch: app.fetch,
+    port: config.PORT,
+    hostname: config.OVERWATCH_LISTEN_HOST,
+  },
+  (info) => {
+    console.log(`[daemon] listening on http://${info.address}:${info.port}`);
+  },
+);
 
 // Suppress unused warning for `server` — kept so we have a handle to it for
 // future shutdown handling.
@@ -202,6 +220,13 @@ const adapterServer = new AdapterProtocolServer({
     catchAllLoggerEnabled: config.CATCH_ALL_LOGGER,
   },
   harnesses,
+  activeProviderId: config.HARNESS_PROVIDER,
+  activeTarget: harness.provider,
+  monitorSource,
+  hermesJobsBridge,
+  hermesSkillsBridge,
+  hermesBaseURL: config.HERMES_BASE_URL,
+  hermesApiKey: config.HERMES_API_KEY,
 });
 
 if (config.OVERWATCH_USER_ID && config.ORCHESTRATOR_PAIRING_TOKEN) {

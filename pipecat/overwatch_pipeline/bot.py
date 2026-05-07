@@ -11,7 +11,7 @@ This is the entrypoint Pipecat Cloud invokes per session. The shape:
       → HarnessRouterProcessor             (registry-driven dispatch)
       → PostLLMInferenceGate
       → SayTextVoiceGuard
-      → CartesiaTTSService (streaming Sonic)
+      → configured streaming TTS provider (Cartesia or xAI)
       → transport.output
 
 No LLMService in the main flow — Architecture I. The harness on the user's
@@ -26,21 +26,10 @@ from __future__ import annotations
 
 from loguru import logger
 
-from .auth import create_token_validator
-from .deferred_update_buffer import DeferredUpdateBuffer
 from .harness_adapter_client import HarnessAdapterClient, RelayClient
-from .harness_bridge import HarnessBridgeProcessor
-from .harness_event_router import HarnessRouterProcessor
-from .idle_report import IdleReportProcessor
-from .inference_gate import (
-    InferenceGateState,
-    PostLLMInferenceGate,
-    PreLLMInferenceGate,
-)
-from .say_text_voice_guard import SayTextVoiceGuard
+from .pipeline_factory import build_orchestrator_pipeline
 from .settings import Settings, load
-from .typed_input_decoder import TypedInputDecoder
-from .voices import resolve_voice_id
+from .tts_provider import create_tts_service
 
 
 async def bot(runner_args) -> None:  # noqa: ANN001
@@ -49,14 +38,23 @@ async def bot(runner_args) -> None:  # noqa: ANN001
     Pipecat Cloud injects `runner_args` (DailyRunnerArguments) per session.
     The body field carries our session-start payload from the relay.
     """
+    from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import (
+        LocalSmartTurnAnalyzerV3,
+    )
     from pipecat.audio.vad.silero import SileroVADAnalyzer
-    from pipecat.pipeline.pipeline import Pipeline
     from pipecat.pipeline.runner import PipelineRunner
     from pipecat.pipeline.task import PipelineParams, PipelineTask
     from pipecat.runner.types import DailyRunnerArguments
-    from pipecat.services.cartesia.tts import CartesiaTTSService
     from pipecat.services.deepgram.stt import DeepgramSTTService, DeepgramSTTSettings
     from pipecat.transports.daily.transport import DailyParams, DailyTransport
+    from pipecat.turns.user_start.vad_user_turn_start_strategy import (
+        VADUserTurnStartStrategy,
+    )
+    from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
+        TurnAnalyzerUserTurnStopStrategy,
+    )
+    from pipecat.turns.user_turn_processor import UserTurnProcessor
+    from pipecat.turns.user_turn_strategies import UserTurnStrategies
 
     settings = load()
     _setup_observability(settings)
@@ -70,43 +68,33 @@ async def bot(runner_args) -> None:  # noqa: ANN001
         )
 
     # Body shape from relay's /api/sessions/start:
-    #   { user_id, pairing_token, session_token, default_target? }
-    # - pairing_token authenticates the bot's WS to /api/users/<id>/ws/orchestrator
-    # - session_token is the per-session HMAC the daemon's TokenValidator verifies
-    #   on every harness_command envelope; the phone signed it with the same
-    #   shared pairing_token, so the bot just forwards it without re-deriving.
+    #   { user_id, session_token, orchestrator_token, default_target? }
+    #
+    # - session_token: per-session HMAC. The relay verified it before calling
+    #   us, and the daemon's TokenValidator verifies it again per-command.
+    #   The orchestrator just forwards it on every harness_command envelope.
+    # - orchestrator_token: short-lived auth token for the bot's WebSocket
+    #   to /api/users/<id>/ws/orchestrator. Scoped to user_id + expires_at
+    #   and signed by the relay using the long-term pairing_token. The
+    #   pairing_token itself is INTENTIONALLY NOT in this body — we don't
+    #   want the long-term Mac secret to traverse Pipecat Cloud.
     body = runner_args.body or {}
     if not isinstance(body, dict):
         body = {}
     user_id = body.get("user_id") or "alpha"
-    pairing_token = body.get("pairing_token") or ""
     session_token = body.get("session_token") or ""
+    orchestrator_token = body.get("orchestrator_token") or ""
+    tts_provider = body.get("tts_provider")
     target = body.get("default_target") or "claude-code"
 
-    if not user_id or not pairing_token or not session_token:
+    if not user_id or not session_token or not orchestrator_token:
         raise RuntimeError(
             "overwatch-orchestrator missing identity in runner_args.body — "
-            "expected user_id, pairing_token, session_token (got "
+            "expected user_id, session_token, orchestrator_token (got "
             f"keys: {sorted(body.keys())})"
         )
 
-    # Verify the phone-derived session_token at the orchestrator boundary.
-    # The daemon also verifies on every command — this catches expired or
-    # tampered tokens up-front so the user sees a clear failure instead of
-    # a silent dead Daily room.
-    token_validator = create_token_validator(pairing_token)
-    claims = token_validator.verify(session_token)
-    if claims is None:
-        raise RuntimeError(
-            "overwatch-orchestrator rejected session_token — "
-            "expired or signed with a different pairing secret"
-        )
-    logger.info(
-        "bot.session_token_verified",
-        session_id=claims.session_id,
-        expires_at=claims.expires_at,
-    )
-
+    vad_analyzer = SileroVADAnalyzer()
     transport = DailyTransport(
         runner_args.room_url,
         runner_args.token,
@@ -114,31 +102,48 @@ async def bot(runner_args) -> None:  # noqa: ANN001
         params=DailyParams(  # type: ignore[call-arg]
             audio_in_enabled=True,
             audio_out_enabled=True,
-            vad_analyzer=SileroVADAnalyzer(),
+            audio_out_10ms_chunks=1,
+            vad_analyzer=vad_analyzer,
         ),
     )
+    logger.warning(
+        "bot.daily_audio_params audio_out_10ms_chunks=1 audio_out_enabled=True"
+    )
 
+    # Keyterm prompting biases Nova-3 toward project / tool / agent names
+    # that mainstream models routinely garble (tmux, Hermes, Codex, etc).
+    # See settings.DEFAULT_STT_KEYTERMS; override via STT_KEYTERMS env.
+    stt_settings_kwargs: dict = {
+        "model": "nova-3",
+        "interim_results": True,
+        "endpointing": settings.stt_endpointing_ms,
+        "utterance_end_ms": settings.stt_utterance_end_ms,
+    }
+    if settings.stt_keyterms:
+        stt_settings_kwargs["keyterm"] = list(settings.stt_keyterms)
     stt = DeepgramSTTService(
         api_key=settings.deepgram_api_key,
-        settings=DeepgramSTTSettings(
-            model="nova-3",
-            interim_results=True,
-        ),
+        settings=DeepgramSTTSettings(**stt_settings_kwargs),
     )
 
-    tts = CartesiaTTSService(
-        api_key=settings.cartesia_api_key,
-        voice_id=resolve_voice_id(settings.cartesia_voice_id),
+    tts = create_tts_service(
+        settings,
+        requested_provider=tts_provider if isinstance(tts_provider, str) else None,
     )
 
-    gate_state = InferenceGateState(
-        cooldown_seconds=settings.cooldown_seconds,
-        cancel_confirm_timeout_seconds=settings.cancel_confirm_timeout_seconds,
+    user_turn_processor = UserTurnProcessor(
+        user_turn_strategies=UserTurnStrategies(
+            start=[VADUserTurnStartStrategy()],
+            stop=[
+                TurnAnalyzerUserTurnStopStrategy(
+                    turn_analyzer=LocalSmartTurnAnalyzerV3()
+                )
+            ],
+        )
     )
-    pre_gate = PreLLMInferenceGate(state=gate_state)
-    post_gate = PostLLMInferenceGate(state=gate_state)
 
-    buffer = DeferredUpdateBuffer()
+    gate_state_ref = {"gate": None}
+    initial_harness_state: dict[str, bool] = {}
 
     async def _on_harness_state(payload: dict) -> None:
         # Daemon's snapshot is the source of truth for `in_flight` at connect
@@ -146,63 +151,45 @@ async def bot(runner_args) -> None:  # noqa: ANN001
         # orchestrator booted (e.g. mid-flight reconnects).
         in_flight = payload.get("in_flight")
         if isinstance(in_flight, bool):
-            gate_state.update_harness_in_flight(in_flight)
+            gate = gate_state_ref["gate"]
+            if gate is None:
+                initial_harness_state["in_flight"] = in_flight
+                return
+            gate.update_harness_in_flight(in_flight)
             logger.info("bot.harness_state_synced", in_flight=in_flight)
 
     adapter_client: HarnessAdapterClient = RelayClient(
         relay_url=settings.relay_url,
         user_id=user_id,
-        pairing_token=pairing_token,
+        ws_auth_token=orchestrator_token,
         session_token=session_token,
         on_harness_state=_on_harness_state,
     )
     await adapter_client.connect()
 
-    bridge = HarnessBridgeProcessor(
+    factory = build_orchestrator_pipeline(
+        transport_input=transport.input(),
+        transport_output=transport.output(),
+        stt=stt,
+        tts=tts,
         adapter_client=adapter_client,
-        gate_state=gate_state,
-        deferred_buffer=buffer,
+        settings=settings,
         default_target=target,
+        user_turn_processor=user_turn_processor,
     )
-    router = HarnessRouterProcessor(
-        deferred_buffer=buffer,
-        default_mode=settings.registry_default_mode,
-    )
-
-    idle_report = IdleReportProcessor(
-        gate_state=gate_state,
-        buffer=buffer,
-        threshold_seconds=settings.idle_report_threshold_seconds,
-        cooldown_seconds=settings.idle_report_cooldown_seconds,
-    )
-
-    say_guard = SayTextVoiceGuard()
-
-    typed_input_decoder = TypedInputDecoder()
-
-    pipeline = Pipeline(
-        [
-            transport.input(),
-            # Decode Daily app-messages (typed user input from mobile InputBar)
-            # into UserTextInputFrames before VAD/STT see anything.
-            typed_input_decoder,
-            stt,
-            idle_report,
-            pre_gate,
-            bridge,
-            router,
-            post_gate,
-            say_guard,
-            tts,
-            transport.output(),
-        ]
-    )
+    gate_state_ref["gate"] = factory.gate_state
+    if "in_flight" in initial_harness_state:
+        factory.gate_state.update_harness_in_flight(initial_harness_state["in_flight"])
+        logger.info(
+            "bot.harness_state_synced",
+            in_flight=initial_harness_state["in_flight"],
+        )
 
     # Pipecat 1.1.0 dropped the allow_interruptions kwarg — interruption is
     # always-on once a VAD analyzer is wired into the transport (see DailyParams
     # above). Only the metric flags survive on PipelineParams.
     task = PipelineTask(
-        pipeline,
+        factory.pipeline,
         params=PipelineParams(
             enable_metrics=True,
             enable_usage_metrics=True,

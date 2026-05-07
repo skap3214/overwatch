@@ -21,10 +21,29 @@ import type {
   Envelope,
   HarnessCommand,
   HarnessEvent,
+  MonitorActionMetadata,
+  MonitorActionResult,
+  ServerMessage,
+  ScheduledMonitor as WireScheduledMonitor,
 } from "@overwatch/shared/protocol";
 import { PROTOCOL_VERSION } from "@overwatch/shared/protocol";
 import type { OrchestratorHarness } from "../harness/types.js";
 import type { AdapterEvent } from "../shared/events.js";
+import { getCapabilities } from "../harness/capabilities.js";
+import { listProviders } from "../harness/providers/index.js";
+import {
+  createScheduledTask,
+  deleteScheduledTask,
+  type ScheduledMonitor,
+} from "../extensions/scheduler.js";
+import type { MonitorSource } from "../scheduler/monitor-source.js";
+import type { HermesJobsBridge } from "../scheduler/hermes-jobs-bridge.js";
+import type { HermesSkillsBridge } from "../scheduler/hermes-skills-bridge.js";
+import {
+  listJobRuns,
+  readJobRunOutput,
+  summarizeOutput,
+} from "../scheduler/hermes-job-runs.js";
 import {
   COMMAND_ALLOWLIST,
   type AdapterProtocolDeps,
@@ -48,6 +67,15 @@ interface AdapterProtocolServerOptions {
   deps: AdapterProtocolDeps;
   /** Map of provider id → harness instance. */
   harnesses: Record<string, OrchestratorHarness>;
+  /** Configured provider id, e.g. "pi-coding-agent", "claude-code-cli", "hermes". */
+  activeProviderId: string;
+  /** Active provider namespace used by harness events, e.g. "pi", "claude-code", "hermes". */
+  activeTarget: string;
+  monitorSource: MonitorSource;
+  hermesJobsBridge?: HermesJobsBridge | null;
+  hermesSkillsBridge?: HermesSkillsBridge | null;
+  hermesBaseURL?: string;
+  hermesApiKey?: string;
 }
 
 /**
@@ -60,6 +88,29 @@ function stampEvent(
   target: string,
 ): HarnessEvent {
   return { ...event, correlation_id, target } as HarnessEvent;
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function notificationToServerMessage(notification: NotificationEvent): ServerMessage {
+  return {
+    type: "notification",
+    id: notification.id,
+    title: notification.title,
+    body: notification.body,
+    kind: notification.kind,
+    created_at: notification.createdAt,
+    speakable_text: notification.speakableText,
+    status: notification.status,
+    source: notification.source,
+    metadata: notification.metadata,
+  };
+}
+
+function toWireMonitor(monitor: ScheduledMonitor): WireScheduledMonitor {
+  return { ...monitor } as WireScheduledMonitor;
 }
 
 function majorVersion(version: string): string {
@@ -77,6 +128,14 @@ export class AdapterProtocolServer {
   private stopped = false;
   private readonly catchAllLoggers = new Map<string, CatchAllLogger>();
   private notificationsUnsubscribe: (() => void) | null = null;
+  private monitorUnsubscribe: (() => void) | null = null;
+  private skillsUnsubscribe: (() => void) | null = null;
+  /**
+   * Per-target active correlation id. Enforces the protocol's busy
+   * invariant: `submit_text` must be rejected when the target is already
+   * running a turn. Only `submit_with_steer` may preempt.
+   */
+  private readonly activeByTarget = new Map<string, string>();
 
   constructor(private readonly opts: AdapterProtocolServerOptions) {
     this.tokens = createTokenValidator(opts.deps.pairingToken || "alpha-placeholder");
@@ -88,7 +147,15 @@ export class AdapterProtocolServer {
     this.connect();
     this.notificationsUnsubscribe = notificationStore.subscribe((notification) => {
       this.emitNotificationEvent(notification);
+      this.emitNotificationSnapshot(notification);
     });
+    this.monitorUnsubscribe = this.opts.monitorSource.subscribe((monitors) => {
+      this.emitMonitorSnapshot(monitors);
+    });
+    this.skillsUnsubscribe =
+      this.opts.hermesSkillsBridge?.subscribe((skills) => {
+        this.emitSkillsSnapshot(skills);
+      }) ?? null;
   }
 
   stop(): void {
@@ -108,6 +175,14 @@ export class AdapterProtocolServer {
     if (this.notificationsUnsubscribe) {
       this.notificationsUnsubscribe();
       this.notificationsUnsubscribe = null;
+    }
+    if (this.monitorUnsubscribe) {
+      this.monitorUnsubscribe();
+      this.monitorUnsubscribe = null;
+    }
+    if (this.skillsUnsubscribe) {
+      this.skillsUnsubscribe();
+      this.skillsUnsubscribe = null;
     }
   }
 
@@ -147,6 +222,10 @@ export class AdapterProtocolServer {
     });
   }
 
+  private emitNotificationSnapshot(notification: NotificationEvent): void {
+    this.sendServerMessage(notificationToServerMessage(notification));
+  }
+
   private connect(): void {
     if (this.stopped) return;
     const { relayUrl, userId, pairingToken } = this.opts.deps;
@@ -176,17 +255,9 @@ export class AdapterProtocolServer {
       // The relay's existing pairing protocol handles authn; we send a daemon-
       // ready envelope after socket open so the relay can route orchestrator
       // commands here.
-      this.send({
-        protocol_version: PROTOCOL_VERSION,
-        kind: "server_message",
-        id: randomUUID(),
-        timestamp: new Date().toISOString(),
-        payload: {
-          type: "harness_state",
-          active_target: Object.keys(this.opts.harnesses)[0] ?? "",
-          in_flight: false,
-        },
-      });
+      this.emitHarnessState();
+      this.emitHarnessSnapshot();
+      void this.emitInitialUiSnapshots();
     });
 
     this.socket.on("message", (raw: Buffer | string) => {
@@ -220,6 +291,96 @@ export class AdapterProtocolServer {
     } catch (err) {
       console.warn("[adapter-protocol] send failed:", err);
     }
+  }
+
+  private sendServerMessage(payload: ServerMessage): void {
+    this.send({
+      protocol_version: PROTOCOL_VERSION,
+      kind: "server_message",
+      id: randomUUID(),
+      timestamp: new Date().toISOString(),
+      payload: payload as unknown as Record<string, unknown>,
+    });
+  }
+
+  private emitHarnessState(): void {
+    this.sendServerMessage({
+      type: "harness_state",
+      active_target: this.opts.activeTarget,
+      in_flight: this.activeByTarget.size > 0,
+      active_correlation_id: this.firstActiveCorrelationId() ?? undefined,
+    });
+  }
+
+  private emitHarnessSnapshot(): void {
+    this.sendServerMessage({
+      type: "harness_snapshot",
+      active_provider_id: this.opts.activeProviderId,
+      active_target: this.opts.activeTarget,
+      capabilities: getCapabilities(this.opts.activeProviderId),
+      providers: listProviders(),
+      in_flight: this.activeByTarget.size > 0,
+      active_correlation_id: this.firstActiveCorrelationId() ?? undefined,
+    });
+  }
+
+  private async emitInitialUiSnapshots(): Promise<void> {
+    this.emitMonitorSnapshot(await this.opts.monitorSource.list());
+    this.emitSkillsSnapshot(this.opts.hermesSkillsBridge?.list() ?? []);
+    for (const notification of notificationStore.list(20).reverse()) {
+      this.emitNotificationSnapshot(notification);
+    }
+  }
+
+  private emitMonitorSnapshot(monitors: ScheduledMonitor[]): void {
+    this.sendServerMessage({
+      type: "monitor_snapshot",
+      monitors: monitors.map(toWireMonitor),
+      actions: this.monitorActionMetadata(),
+    });
+  }
+
+  private emitSkillsSnapshot(skills: Array<{ name: string; description: string; category: string; enabled: boolean; version?: string }>): void {
+    this.sendServerMessage({
+      type: "skills_snapshot",
+      provider_id: this.opts.activeProviderId,
+      skills,
+    });
+  }
+
+  private firstActiveCorrelationId(): string | null {
+    for (const id of this.activeByTarget.values()) return id;
+    return null;
+  }
+
+  private monitorActionMetadata(): MonitorActionMetadata {
+    const isHermes = this.opts.activeProviderId === "hermes";
+    if (isHermes) {
+      return {
+        source: "hermes",
+        provider_id: this.opts.activeProviderId,
+        can_create: true,
+        can_edit: true,
+        can_delete: true,
+        can_pause: true,
+        can_resume: true,
+        can_run_now: true,
+        supports_run_history: true,
+      };
+    }
+    return {
+      source: "local",
+      provider_id: this.opts.activeProviderId,
+      can_create: true,
+      can_edit: false,
+      can_delete: true,
+      can_pause: false,
+      can_resume: false,
+      can_run_now: false,
+      supports_run_history: false,
+      unsupported_reason:
+        "Overwatch-local monitors can be created and deleted, but local cron execution is not wired in this daemon.",
+    };
   }
 
   private async onMessage(raw: string): Promise<void> {
@@ -285,6 +446,9 @@ export class AdapterProtocolServer {
         case "cancel":
           await this.handleCancel(command);
           break;
+        case "manage_monitor":
+          await this.handleManageMonitor(command);
+          break;
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "unknown error";
@@ -307,7 +471,16 @@ export class AdapterProtocolServer {
   }
 
   private resolveHarness(target: string): OrchestratorHarness | null {
-    return this.opts.harnesses[target] ?? null;
+    const direct = this.opts.harnesses[target];
+    if (direct) return direct;
+    // Fallback: single-harness-per-daemon today; if the orchestrator's
+    // default target doesn't match the configured provider id (e.g. bot.py
+    // defaults to "claude-code" but the daemon is running Hermes), route
+    // to the active harness. The active provider id is surfaced via
+    // /health and the daemon's harness_state snapshot on connect.
+    const keys = Object.keys(this.opts.harnesses);
+    if (keys.length === 1) return this.opts.harnesses[keys[0]];
+    return null;
   }
 
   private async handleSubmitText(cmd: HarnessCommand): Promise<void> {
@@ -315,6 +488,17 @@ export class AdapterProtocolServer {
     const harness = this.resolveHarness(cmd.target);
     if (!harness) {
       this.emitError(cmd.correlation_id, cmd.target, `unknown target: ${cmd.target}`);
+      return;
+    }
+    // Protocol invariant: submit_text must be rejected when the target is
+    // already running a turn. Use submit_with_steer to preempt.
+    const active = this.activeByTarget.get(cmd.target);
+    if (active) {
+      this.emitError(
+        cmd.correlation_id,
+        cmd.target,
+        `target ${cmd.target} busy with correlation_id ${active} — use submit_with_steer to preempt`,
+      );
       return;
     }
     await this.runHarnessTurn(harness, cmd.correlation_id, cmd.target, cmd.payload.text);
@@ -344,6 +528,11 @@ export class AdapterProtocolServer {
         // cancel_failed — surface as an error event but proceed with the new turn.
         this.emitError(cancelTarget, cmd.target, "cancel_confirmed timeout");
       }
+      // Whether cancel confirmed or timed out, the prior correlation no
+      // longer occupies the target.
+      if (this.activeByTarget.get(cmd.target) === cancelTarget) {
+        this.activeByTarget.delete(cmd.target);
+      }
     }
 
     await this.runHarnessTurn(harness, cmd.correlation_id, cmd.target, cmd.payload.text);
@@ -365,6 +554,138 @@ export class AdapterProtocolServer {
     }
   }
 
+  private async handleManageMonitor(cmd: HarnessCommand): Promise<void> {
+    if (cmd.kind !== "manage_monitor") return;
+    const { request_id, action } = cmd.payload;
+    try {
+      const result = await this.runMonitorAction(cmd);
+      this.sendMonitorActionResult({
+        request_id,
+        action,
+        ok: true,
+        ...result,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      this.sendMonitorActionResult({
+        request_id,
+        action,
+        ok: false,
+        error: { code: "monitor_action_failed", message },
+      });
+    }
+    this.emitMonitorSnapshot(await this.opts.monitorSource.list());
+  }
+
+  private sendMonitorActionResult(result: Omit<MonitorActionResult, "type">): void {
+    this.sendServerMessage({
+      type: "monitor_action_result",
+      ...result,
+    });
+  }
+
+  private async runMonitorAction(
+    cmd: Extract<HarnessCommand, { kind: "manage_monitor" }>
+  ): Promise<Partial<MonitorActionResult>> {
+    const isHermes = this.opts.activeProviderId === "hermes";
+    if (isHermes) return this.runHermesMonitorAction(cmd);
+    return this.runLocalMonitorAction(cmd);
+  }
+
+  private async runLocalMonitorAction(
+    cmd: Extract<HarnessCommand, { kind: "manage_monitor" }>
+  ): Promise<Partial<MonitorActionResult>> {
+    const { action, monitor_id, input } = cmd.payload;
+    if (action === "list") {
+      return { monitors: (await this.opts.monitorSource.list()).map(toWireMonitor) };
+    }
+    if (action === "get") {
+      const monitor = (await this.opts.monitorSource.list()).find((item) => item.id === monitor_id);
+      if (!monitor) throw new Error(`Monitor not found: ${monitor_id ?? "<missing>"}`);
+      return { monitor: toWireMonitor(monitor) };
+    }
+    if (action === "create") {
+      const title = asString(input?.title ?? input?.description) ?? "Scheduled monitor";
+      const prompt = asString(input?.prompt) ?? asString(input?.instructions);
+      if (!prompt) throw new Error("Local monitor creation requires a prompt.");
+      const schedule = asString(input?.schedule ?? input?.interval ?? input?.cron);
+      if (!schedule) throw new Error("Local monitor creation requires a schedule.");
+      const normalized = schedule.replace(/^every\s+/i, "").trim();
+      createScheduledTask({
+        prompt,
+        description: title,
+        interval: /^\d+[smhd]$/.test(normalized) ? normalized : undefined,
+        cron: /^\d+[smhd]$/.test(normalized) ? undefined : normalized,
+        recurring: input?.recurring === false ? false : true,
+      });
+      return { monitors: (await this.opts.monitorSource.list()).map(toWireMonitor) };
+    }
+    if (action === "delete") {
+      if (!monitor_id) throw new Error("Delete requires monitor_id.");
+      const removed = deleteScheduledTask(monitor_id);
+      if (!removed) throw new Error(`Monitor not found: ${monitor_id}`);
+      return { monitors: (await this.opts.monitorSource.list()).map(toWireMonitor) };
+    }
+    throw new Error(`Action '${action}' is not supported for Overwatch-local monitors.`);
+  }
+
+  private async runHermesMonitorAction(
+    cmd: Extract<HarnessCommand, { kind: "manage_monitor" }>
+  ): Promise<Partial<MonitorActionResult>> {
+    const { action, monitor_id, run_id, input } = cmd.payload;
+    const baseURL = this.opts.hermesBaseURL;
+    const apiKey = this.opts.hermesApiKey;
+    if (!baseURL || !apiKey) throw new Error("Hermes monitor API is not configured.");
+    if (action === "list") {
+      await this.opts.hermesJobsBridge?.refresh();
+      return { monitors: (await this.opts.monitorSource.list()).map(toWireMonitor) };
+    }
+    if (action === "get") {
+      const monitor = (await this.opts.monitorSource.list()).find((item) => item.id === monitor_id);
+      if (!monitor) throw new Error(`Monitor not found: ${monitor_id ?? "<missing>"}`);
+      return { monitor: toWireMonitor(monitor) };
+    }
+    if (action === "list_runs") {
+      if (!monitor_id) throw new Error("Run history requires monitor_id.");
+      return { runs: (await listJobRuns(monitor_id)) as unknown as Array<Record<string, unknown>> };
+    }
+    if (action === "read_run") {
+      if (!monitor_id || !run_id) throw new Error("Reading a run requires monitor_id and run_id.");
+      const content = await readJobRunOutput(monitor_id, run_id);
+      return { content: content ? summarizeOutput(content) : "" };
+    }
+
+    const methodByAction: Record<string, string> = {
+      create: "POST",
+      update: "PATCH",
+      delete: "DELETE",
+      pause: "POST",
+      resume: "POST",
+      run_now: "POST",
+    };
+    const method = methodByAction[action];
+    if (!method) throw new Error(`Unsupported Hermes monitor action: ${action}`);
+    const url =
+      action === "create"
+        ? `${baseURL.replace(/\/$/, "")}/api/jobs`
+        : `${baseURL.replace(/\/$/, "")}/api/jobs/${encodeURIComponent(monitor_id ?? "")}${action === "pause" ? "/pause" : action === "resume" ? "/resume" : action === "run_now" ? "/run" : ""}`;
+    if (action !== "create" && !monitor_id) throw new Error(`${action} requires monitor_id.`);
+
+    const response = await fetch(url, {
+      method,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: method === "DELETE" ? undefined : JSON.stringify(input ?? {}),
+    });
+    if (!response.ok) {
+      throw new Error(`Hermes ${action} failed: HTTP ${response.status}`);
+    }
+    await this.opts.hermesJobsBridge?.refresh();
+    return { monitors: (await this.opts.monitorSource.list()).map(toWireMonitor) };
+  }
+
   private async runHarnessTurn(
     harness: OrchestratorHarness,
     correlation_id: string,
@@ -372,6 +693,9 @@ export class AdapterProtocolServer {
     prompt: string,
   ): Promise<void> {
     const turn = this.registry.register(correlation_id);
+    this.activeByTarget.set(target, correlation_id);
+    this.emitHarnessState();
+    this.emitHarnessSnapshot();
     try {
       for await (const adapterEvent of harness.runTurn({
         prompt,
@@ -394,6 +718,13 @@ export class AdapterProtocolServer {
       }
     } finally {
       this.registry.unregister(correlation_id);
+      // Only clear if we're still the active turn for this target —
+      // submit_with_steer may have already replaced us.
+      if (this.activeByTarget.get(target) === correlation_id) {
+        this.activeByTarget.delete(target);
+      }
+      this.emitHarnessState();
+      this.emitHarnessSnapshot();
     }
   }
 

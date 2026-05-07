@@ -52,6 +52,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
           "Overwatch uses the camera to scan QR codes for connecting to your computer.",
       },
     ],
+    "@config-plugins/react-native-webrtc",
   ],
   extra: {
     eas: {

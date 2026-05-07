@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback, useState } from "react";
 import {
+  AppState,
   View,
   Text,
   KeyboardAvoidingView,
@@ -17,13 +18,14 @@ import { useThemeStore } from "../src/stores/theme-store";
 import { usePairingStore, deriveSessionToken } from "../src/stores/pairing-store";
 import { useConversationStore } from "../src/stores/conversation";
 import { usePipecatSession } from "../src/hooks/use-pipecat-session";
+import { applyConversationToggle } from "../src/services/voice-controls";
 import { useColors } from "../src/theme";
 import { StatusBar as OverwatchStatusBar } from "../src/components/StatusBar";
 import { MonitorsDropdown } from "../src/components/MonitorsDropdown";
 import { NotificationsHistoryScreen } from "../src/components/NotificationsHistoryScreen";
 import { TranscriptView } from "../src/components/TranscriptView";
-import { InputBar } from "../src/components/InputBar";
 import { PTTButton } from "../src/components/PTTButton";
+import { ConversationButton } from "../src/components/ConversationButton";
 import { SettingsPage } from "../src/components/SettingsPage";
 import { QRScanner } from "../src/components/QRScanner";
 import "../global.css";
@@ -36,6 +38,7 @@ export default function App() {
   const relayUrl = usePairingStore((s) => s.relayUrl);
   const userId = usePairingStore((s) => s.userId);
   const pairingToken = usePairingStore((s) => s.pairingToken);
+  const ttsProvider = usePairingStore((s) => s.ttsProvider);
   const hydratePairing = usePairingStore((s) => s.hydrate);
 
   const transportState = useConversationStore((s) => s.transportState);
@@ -45,9 +48,15 @@ export default function App() {
   const setConnectError = useConversationStore((s) => s.setConnectError);
   const clearMessages = useConversationStore((s) => s.clearMessages);
   const [retryNonce, setRetryNonce] = useState(0);
-  const recordingUI = turnState === "recording" || turnState === "preparing";
+  // Conversation mode: tap to flip into the always-listening voice-to-voice
+  // loop (mic stays open, server VAD/smart-turn manage turn-taking). Tap
+  // again to exit. PTT is disabled while conversation mode is on.
+  const [conversationActive, setConversationActive] = useState(false);
+  // recordingUI no longer drives an InputBar swap (InputBar removed) but
+  // PTTButton still uses it internally via the conversation store state.
+  void turnState;
 
-  const { connect, disconnect, sendUserText, setMicEnabled, sendInterruptIntent } =
+  const { connect, disconnect, setMicEnabled, sendInterruptIntent } =
     usePipecatSession();
 
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -55,6 +64,14 @@ export default function App() {
   const [showQR, setShowQR] = useState(false);
   const [showMonitors, setShowMonitors] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  // Tracks whether the app is in the foreground. We tear down the Daily
+  // session on background so iOS releases the audio session entirely
+  // (orange recording indicator goes away, AirPods/Mac audio routing is no
+  // longer hijacked). The auto-connect effect re-runs when this flips back
+  // to active.
+  const [appActive, setAppActive] = useState<boolean>(
+    AppState.currentState === "active",
+  );
 
   useEffect(() => {
     const showSub = Keyboard.addListener("keyboardWillShow", () =>
@@ -80,9 +97,28 @@ export default function App() {
     useThemeStore.getState().loadMode();
   }, [hydratePairing]);
 
-  // Auto-connect once paired and hydrated. Re-runs when retryNonce flips.
+  // Background → leave the Daily call so iOS releases the audio session
+  // and the user's Mac/AirPods routing stops being hijacked. Foreground →
+  // the auto-connect effect re-runs and rejoins. We only react to the
+  // explicit "background" state — `inactive` is transient (volume button,
+  // alert), and tearing down on those would cause a thrashy reconnect.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        setAppActive(true);
+      } else if (state === "background") {
+        setAppActive(false);
+        void disconnect();
+      }
+    });
+    return () => sub.remove();
+  }, [disconnect]);
+
+  // Auto-connect once paired and hydrated. Re-runs when retryNonce flips
+  // or when the app returns to the foreground.
   useEffect(() => {
     if (!isPaired) return;
+    if (!appActive) return;
     let cancelled = false;
     (async () => {
       setConnectError(null);
@@ -114,6 +150,7 @@ export default function App() {
             user_id: userId,
             pairing_token: pairingToken,
             session_token: sessionToken,
+            tts_provider: ttsProvider,
           }),
         });
         if (!res.ok) {
@@ -145,7 +182,8 @@ export default function App() {
 
       try {
         await connect({
-          endpoint: roomUrl,
+          roomUrl,
+          roomToken,
           sessionToken,
           mode: "ptt",
         });
@@ -163,9 +201,11 @@ export default function App() {
     };
   }, [
     isPaired,
+    appActive,
     relayUrl,
     userId,
     pairingToken,
+    ttsProvider,
     connect,
     disconnect,
     setConnectError,
@@ -178,31 +218,41 @@ export default function App() {
   const closeMonitors = useCallback(() => setShowMonitors(false), []);
 
   const handleNewChat = useCallback(() => {
+    logApp("new_chat");
     clearMessages();
   }, [clearMessages]);
 
-  const handleTextSubmit = useCallback(
-    (text: string) => {
-      void sendUserText(text);
-    },
-    [sendUserText],
-  );
-
   const handleStartRecording = useCallback(async () => {
+    logApp("ptt.start_recording");
     setTurnState("recording");
     void sendInterruptIntent();
     void setMicEnabled(true);
   }, [setMicEnabled, sendInterruptIntent, setTurnState]);
 
   const handleStopRecording = useCallback(async () => {
+    logApp("ptt.stop_recording");
     void setMicEnabled(false);
     setTurnState("idle");
   }, [setMicEnabled, setTurnState]);
 
   const handleCancelRecording = useCallback(async () => {
+    logApp("ptt.cancel_recording");
     void setMicEnabled(false);
     setTurnState("idle");
   }, [setMicEnabled, setTurnState]);
+
+  const handleConversationToggle = useCallback(
+    (next: boolean) => {
+      logApp("conversation.toggle", { next });
+      applyConversationToggle(next, {
+        setConversationActive,
+        sendInterruptIntent,
+        setMicEnabled,
+        setTurnState,
+      });
+    },
+    [sendInterruptIntent, setMicEnabled, setTurnState],
+  );
 
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
@@ -222,24 +272,29 @@ export default function App() {
 
             <View
               style={{
-                flexDirection: hand === "left" ? "row-reverse" : "row",
+                flexDirection: "row",
                 alignItems: "center",
+                justifyContent: "center",
                 paddingHorizontal: 28,
                 paddingTop: 6,
                 paddingBottom: keyboardVisible ? 6 : 36,
-                gap: 8,
+                gap: 32,
                 backgroundColor: colors.bg,
               }}
             >
-              <View style={{ flex: 1 }}>
-                {!recordingUI && <InputBar onSubmit={handleTextSubmit} />}
-              </View>
               <PTTButton
                 hand={hand}
+                size={88}
+                disabled={conversationActive}
                 onStartRecording={handleStartRecording}
                 onStopRecording={handleStopRecording}
                 onCancelRecording={handleCancelRecording}
                 amplitude={0}
+              />
+              <ConversationButton
+                size={88}
+                active={conversationActive}
+                onToggle={handleConversationToggle}
               />
             </View>
           </>
@@ -380,5 +435,16 @@ export default function App() {
         </View>
       </Modal>
     </GestureHandlerRootView>
+  );
+}
+
+function logApp(event: string, payload?: Record<string, unknown>): void {
+  console.info(
+    "[overwatch-mobile]",
+    JSON.stringify({
+      at: new Date().toISOString(),
+      event,
+      ...(payload ?? {}),
+    }),
   );
 }

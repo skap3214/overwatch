@@ -2,10 +2,14 @@
  * /api/v1/tmux/* — HTTP routes for clients that need to drive
  * Overwatch-managed tmux sessions.
  *
- * Loopback-only by default (the backend binds 127.0.0.1). If a token is set,
- * Bearer auth is enforced. There is intentionally no allowlist of session
- * names yet — Overwatch tracks session creation in its own state, but this
- * route group exposes raw tmux for now. See open question #1 in the plan.
+ * Auth model:
+ *   - Loopback (127.0.0.1) bind: the only client is local. We still require
+ *     Bearer auth if `authToken` is set, but a missing token is tolerated
+ *     because the kernel-level loopback restriction already keeps remote
+ *     attackers out.
+ *   - Non-loopback bind (0.0.0.0 / LAN): a Bearer token is mandatory.
+ *     Mutating routes refuse without it. The daemon's index.ts also logs
+ *     a startup warning in this configuration.
  */
 
 import { Hono } from "hono";
@@ -20,22 +24,37 @@ import {
 } from "../tmux/cli.js";
 
 export interface TmuxRoutesOptions {
-  /** Optional bearer token to require on every request. */
+  /** Bearer token required on every request when bindHost is non-loopback. */
   authToken?: string;
+  /** Bind hostname configured on the daemon. Drives the auth-required policy. */
+  bindHost?: string;
 }
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
 export function createTmuxRouter(opts: TmuxRoutesOptions = {}): Hono {
   const app = new Hono();
+  const isLoopback = LOOPBACK_HOSTS.has(opts.bindHost ?? "127.0.0.1");
 
-  if (opts.authToken) {
-    app.use("*", async (c, next) => {
+  app.use("*", async (c, next) => {
+    if (opts.authToken) {
       const auth = c.req.header("authorization") ?? "";
       if (auth !== `Bearer ${opts.authToken}`) {
         return c.json({ error: "unauthorized" }, 401);
       }
-      await next();
-    });
-  }
+    } else if (!isLoopback) {
+      // Non-loopback bind without a token = unauthenticated remote access
+      // to a tmux + key-injection surface. Refuse outright.
+      return c.json(
+        {
+          error:
+            "/api/v1/tmux is not loopback-bound and OVERWATCH_API_TOKEN is unset; refusing to serve",
+        },
+        503,
+      );
+    }
+    await next();
+  });
 
   // GET /api/v1/tmux/sessions
   app.get("/sessions", async (c) => {

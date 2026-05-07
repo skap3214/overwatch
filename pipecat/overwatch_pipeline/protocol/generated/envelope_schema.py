@@ -42,7 +42,7 @@ class Envelope(BaseModel):
     session_token: Annotated[
         str | None,
         Field(
-            description="Per-session HMAC token. Required on every message except the initial pairing exchange."
+            description="Per-session HMAC token. Required only on `harness_command` envelopes (orchestrator → daemon). Daemon-originated `harness_event` envelopes are authenticated end-to-end by the relay's ws/host upgrade and don't carry the per-session token. Phone↔orchestrator `server_message` envelopes flow over the Daily data channel which has its own auth, so they don't carry it either."
         ),
     ] = None
     payload: Annotated[

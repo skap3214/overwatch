@@ -20,6 +20,7 @@ import {
 } from "lucide-react-native";
 import { useColors } from "../theme";
 import { monitorsApi } from "../services/monitors-api";
+import { useMonitorsStore } from "../stores/monitors-store";
 import type { JobRun, ScheduledMonitor } from "../types";
 
 type Props = {
@@ -30,6 +31,7 @@ type Props = {
 
 export function MonitorDetailScreen({ monitor, onClose, onEdit }: Props) {
   const colors = useColors();
+  const actions = useMonitorsStore((s) => s.actions);
   const [runs, setRuns] = useState<JobRun[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -37,13 +39,17 @@ export function MonitorDetailScreen({ monitor, onClose, onEdit }: Props) {
 
   useEffect(() => {
     if (!monitor) return;
+    if (!actions.supports_run_history) {
+      setRuns([]);
+      return;
+    }
     setLoading(true);
     monitorsApi
       .listRuns(monitor.id)
       .then((r) => setRuns(r.runs))
       .catch((err) => console.warn("listRuns failed", err))
       .finally(() => setLoading(false));
-  }, [monitor]);
+  }, [monitor, actions.supports_run_history]);
 
   if (!monitor) return null;
 
@@ -178,7 +184,7 @@ export function MonitorDetailScreen({ monitor, onClose, onEdit }: Props) {
             {monitor.paused ? (
               <ActionButton
                 onPress={onResume}
-                disabled={busy}
+                disabled={busy || !actions.can_resume}
                 colors={colors}
                 icon={<Play size={14} color={colors.text} />}
                 text="Resume"
@@ -186,7 +192,7 @@ export function MonitorDetailScreen({ monitor, onClose, onEdit }: Props) {
             ) : (
               <ActionButton
                 onPress={onPause}
-                disabled={busy}
+                disabled={busy || !actions.can_pause}
                 colors={colors}
                 icon={<Pause size={14} color={colors.text} />}
                 text="Pause"
@@ -194,7 +200,7 @@ export function MonitorDetailScreen({ monitor, onClose, onEdit }: Props) {
             )}
             <ActionButton
               onPress={onRunNow}
-              disabled={busy}
+              disabled={busy || !actions.can_run_now}
               colors={colors}
               icon={<Zap size={14} color={colors.text} />}
               text="Run now"
@@ -202,14 +208,14 @@ export function MonitorDetailScreen({ monitor, onClose, onEdit }: Props) {
             {onEdit && (
               <ActionButton
                 onPress={() => onEdit(monitor)}
-                disabled={busy}
+                disabled={busy || !actions.can_edit}
                 colors={colors}
                 text="Edit"
               />
             )}
             <ActionButton
               onPress={onDelete}
-              disabled={busy}
+              disabled={busy || !actions.can_delete}
               colors={colors}
               icon={<Trash2 size={14} color={colors.error} />}
               text="Delete"
@@ -218,46 +224,59 @@ export function MonitorDetailScreen({ monitor, onClose, onEdit }: Props) {
           </View>
 
           {/* Runs */}
-          <Section title="Run history" colors={colors}>
-            {loading && <ActivityIndicator color={colors.textDim} />}
-            {!loading && runs.length === 0 && (
-              <Text
-                style={{
-                  color: colors.textDim,
-                  fontFamily: "IosevkaAile-Regular",
-                  fontSize: 12,
-                }}
-              >
-                No runs yet.
-              </Text>
-            )}
-            {runs.map((run) => (
-              <Pressable
-                key={run.id}
-                onPress={() => setOpenRun(run)}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  paddingVertical: 10,
-                  borderBottomWidth: 1,
-                  borderBottomColor: colors.border,
-                  gap: 8,
-                }}
-              >
+          {actions.supports_run_history ? (
+            <Section title="Run history" colors={colors}>
+              {loading && <ActivityIndicator color={colors.textDim} />}
+              {!loading && runs.length === 0 && (
                 <Text
                   style={{
-                    flex: 1,
-                    color: colors.text,
+                    color: colors.textDim,
                     fontFamily: "IosevkaAile-Regular",
                     fontSize: 12,
                   }}
                 >
-                  {formatTime(run.ranAt)}
+                  No runs yet.
                 </Text>
-                <ChevronRight size={14} color={colors.textFaint} />
-              </Pressable>
-            ))}
-          </Section>
+              )}
+              {runs.map((run) => (
+                <Pressable
+                  key={run.id}
+                  onPress={() => setOpenRun(run)}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    paddingVertical: 10,
+                    borderBottomWidth: 1,
+                    borderBottomColor: colors.border,
+                    gap: 8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      flex: 1,
+                      color: colors.text,
+                      fontFamily: "IosevkaAile-Regular",
+                      fontSize: 12,
+                    }}
+                  >
+                    {formatTime(run.ranAt)}
+                  </Text>
+                  <ChevronRight size={14} color={colors.textFaint} />
+                </Pressable>
+              ))}
+            </Section>
+          ) : actions.unsupported_reason ? (
+            <Text
+              style={{
+                color: colors.textDim,
+                fontSize: 12,
+                lineHeight: 18,
+                fontFamily: "IosevkaAile-Regular",
+              }}
+            >
+              {actions.unsupported_reason}
+            </Text>
+          ) : null}
         </ScrollView>
 
         {openRun && (

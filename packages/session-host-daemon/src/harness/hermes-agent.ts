@@ -53,6 +53,14 @@ export class HermesAgentHarness implements OrchestratorHarness {
   private readonly fetchImpl: typeof fetch;
   private readonly skillActivated = new Set<string>();
   private readonly catchAllLogger?: (event: unknown) => void;
+  /**
+   * Last completed run_id for this session — passed as `previous_response_id`
+   * on the next turn so Hermes chains the conversation through its native
+   * memory mechanism. The `session_id` we send is for external UI
+   * correlation only (per Hermes API docs); it does NOT carry conversation
+   * context on its own.
+   */
+  private previousResponseId: string | undefined;
 
   constructor(private readonly opts: HermesAgentHarnessOptions) {
     this.fetchImpl = opts.fetchImpl ?? fetch;
@@ -64,7 +72,11 @@ export class HermesAgentHarness implements OrchestratorHarness {
 
     let runId: string;
     try {
-      const started = await this.startRun(input, request.abortSignal);
+      const started = await this.startRun(
+        input,
+        this.previousResponseId,
+        request.abortSignal,
+      );
       runId = started.run_id;
     } catch (err) {
       const message =
@@ -87,14 +99,32 @@ export class HermesAgentHarness implements OrchestratorHarness {
     };
     request.abortSignal?.addEventListener("abort", cancelHandler, { once: true });
 
+    let runCompleted = false;
     try {
-      yield* this.streamRun(runId, request.abortSignal);
+      for await (const event of this.streamRun(runId, request.abortSignal)) {
+        if (event.type === "session_end" && event.subtype === "success") {
+          runCompleted = true;
+        }
+        yield event;
+      }
     } finally {
       request.abortSignal?.removeEventListener("abort", cancelHandler);
       if (cancelRequested) {
         yield { type: "cancel_confirmed" };
       }
+      // Only chain successfully-completed runs. Cancelled or errored
+      // runs are NOT meaningful conversation history; chaining them
+      // would mean the next turn references half a thought.
+      if (runCompleted) {
+        this.previousResponseId = runId;
+      }
     }
+  }
+
+  /** Test hook: drop the conversation chain so the next turn starts fresh. */
+  resetConversation(): void {
+    this.previousResponseId = undefined;
+    this.skillActivated.clear();
   }
 
   private buildInput(prompt: string): string {
@@ -116,13 +146,26 @@ export class HermesAgentHarness implements OrchestratorHarness {
 
   private async startRun(
     input: string,
+    previousResponseId: string | undefined,
     abortSignal?: AbortSignal,
   ): Promise<StartRunResponse> {
     const url = `${this.opts.baseURL.replace(/\/$/, "")}/v1/runs`;
+    const body: Record<string, unknown> = {
+      input,
+      session_id: this.opts.sessionId,
+    };
+    if (previousResponseId) {
+      // Per Hermes API docs: `previous_response_id` chains this run's
+      // input to the prior assistant response. Hermes keeps server-side
+      // memory of the chain so subsequent runs see prior turns. Without
+      // this, every run is a fresh single-shot — the entire complaint of
+      // "the bot doesn't remember anything" maps to forgetting this.
+      body.previous_response_id = previousResponseId;
+    }
     const res = await this.fetchImpl(url, {
       method: "POST",
       headers: { ...this.headers(), "Content-Type": "application/json" },
-      body: JSON.stringify({ input, session_id: this.opts.sessionId }),
+      body: JSON.stringify(body),
       signal: abortSignal,
     });
 

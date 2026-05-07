@@ -2,11 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://overwatch.dev/protocol/harness-command.schema.json",
   "title": "HarnessCommand",
-  "description": "Discriminated union of commands sent from the cloud orchestrator to the Mac session-host daemon. The daemon's command allowlist enforces that only these three kinds are accepted — anything else is rejected and audit-logged. Only user-initiated input (voice or typed) ever produces a submit_with_steer or cancel; background events route through the registry instead.",
+  "description": "Discriminated union of commands sent from the cloud orchestrator to the Mac session-host daemon. The daemon's command allowlist enforces that only these kinds are accepted — anything else is rejected and audit-logged. Only user-initiated input (voice or typed) ever produces a submit_with_steer or cancel; background events route through the registry instead.",
   "oneOf": [
     { "$ref": "#/$defs/SubmitText" },
     { "$ref": "#/$defs/SubmitWithSteer" },
-    { "$ref": "#/$defs/Cancel" }
+    { "$ref": "#/$defs/Cancel" },
+    { "$ref": "#/$defs/ManageMonitor" }
   ],
   "$defs": {
     "Common": {
@@ -86,6 +87,51 @@
                 "target_correlation_id": {
                   "type": "string",
                   "description": "The in-flight turn to cancel."
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ManageMonitor": {
+      "allOf": [
+        { "$ref": "#/$defs/Common" },
+        {
+          "type": "object",
+          "required": ["kind", "payload"],
+          "description": "Authenticated mobile monitor management command. The daemon routes this to the active monitor source and replies with a monitor_action_result server message.",
+          "properties": {
+            "kind": { "const": "manage_monitor" },
+            "payload": {
+              "type": "object",
+              "required": ["request_id", "action"],
+              "additionalProperties": false,
+              "properties": {
+                "request_id": {
+                  "type": "string",
+                  "description": "Client-generated request id echoed by monitor_action_result."
+                },
+                "action": {
+                  "enum": [
+                    "list",
+                    "get",
+                    "create",
+                    "update",
+                    "delete",
+                    "pause",
+                    "resume",
+                    "run_now",
+                    "list_runs",
+                    "read_run"
+                  ]
+                },
+                "monitor_id": { "type": "string" },
+                "run_id": { "type": "string" },
+                "input": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "Provider/source-specific monitor input."
                 }
               }
             }

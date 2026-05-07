@@ -70,7 +70,7 @@ No voice code lives on the Mac anymore. STT, TTS, VAD, smart-turn, the inference
 ### Mobile (`overwatch-mobile/`)
 
 - React Native + Expo app, Pipecat RN client, Daily transport.
-- Two-way audio over WebRTC; typed input goes over the Daily data channel as RTVI client-messages.
+- Two-way audio over WebRTC; typed input and monitor actions go over the Daily data channel as RTVI client-messages.
 - HMAC-derives a per-session token from the long-term pairing token before each session and forwards it to the relay.
 - Boot path:
   1. Hydrate `pairingStore` from AsyncStorage.
@@ -78,7 +78,7 @@ No voice code lives on the Mac anymore. STT, TTS, VAD, smart-turn, the inference
   3. On 200, join the returned Daily room.
   4. Any failure (token derive, 4xx/5xx, missing `daily_room_url`, transport throw) lands in `conversation.connectError` and surfaces as a "Couldn't connect" banner with a Retry button.
 
-Key files: `app/index.tsx` (boot + UI shell), `src/hooks/use-pipecat-session.ts` (RTVI bindings), `src/services/session-token.ts` (HMAC, RN-dep-free so the cross-runtime test can import it), `src/stores/conversation.ts` (single source of truth for transport state, messages, errors), `src/stores/pairing-store.ts`.
+Key files: `app/index.tsx` (boot + UI shell), `src/hooks/use-pipecat-session.ts` (RTVI bindings and UI snapshot reducers), `src/services/session-token.ts` (HMAC, RN-dep-free so the cross-runtime test can import it), `src/services/monitors-api.ts` (request/response correlation for `monitor_action`), `src/stores/conversation.ts` (single source of truth for transport state, messages, errors), `src/stores/harness-store.ts`, `src/stores/monitors-store.ts`, `src/stores/skills-store.ts`, `src/stores/notifications-store.ts`, `src/stores/pairing-store.ts`.
 
 ### Relay (`relay/`)
 
@@ -93,19 +93,23 @@ Worker secrets in production: `PIPECAT_PUBLIC_KEY` (the org's public key, format
 
 ### Orchestrator (`pipecat/overwatch_pipeline/`)
 
-The Pipecat Cloud agent. One pipeline composition lives in `bot.py`:
+The Pipecat Cloud agent. `bot.py` builds real Daily/STT/TTS/relay clients,
+then delegates processor ordering to `pipeline_factory.py` so production and
+the regression harness share the same composition:
 
 ```
 transport.input
-  → TypedInputDecoder        # RTVI server-message → UserTextInputFrame
+  → TypedInputDecoder        # RTVI client-message → UserTextInputFrame / MonitorActionFrame
+  → InterruptionEmitter      # VAD / interrupt-intent → InterruptionFrame broadcast
   → DeepgramSTTService       # Nova-3 streaming
+  → UserTurnProcessor        # smart-turn stop strategy for pause-safe turns
   → IdleReportProcessor      # injects "agent is idle" updates
   → PreLLMInferenceGate      # admit/deny based on InferenceGateState
-  → HarnessBridgeProcessor   # ↔ HarnessAdapterClient (RelayClient)
+  → HarnessBridgeProcessor   # ↔ HarnessAdapterClient (RelayClient), forwards daemon ServerMessages
   → HarnessRouterProcessor   # registry-driven dispatch
   → PostLLMInferenceGate     # mark-done bookkeeping
   → SayTextVoiceGuard        # last-line speakable filter
-  → CartesiaTTSService       # Sonic streaming
+  → configured streaming TTS # Cartesia Sonic or xAI WebSocket
   → transport.output
 ```
 
@@ -116,6 +120,7 @@ Files of note:
 | Concern | File |
 |---|---|
 | Pipeline composition | `bot.py` |
+| Pipeline composition factory + test seam | `pipeline_factory.py` |
 | Harness adapter wire client | `harness_adapter_client.py` (`RelayClient`, `LocalUDSClient` stub) |
 | Bridge processor (the only place that emits `HarnessCommand`s) | `harness_bridge.py` |
 | Event router | `harness_event_router.py` (the FrameProcessor) |
@@ -123,21 +128,23 @@ Files of note:
 | Inference gate state | `inference_gate.py` |
 | Idle reporting | `idle_report.py` |
 | Deferred updates injected into next prompt | `deferred_update_buffer.py` |
+| Held user turns while admission is blocked | `pending_user_input_buffer.py` |
 | Token validator (boundary check) | `auth/token_validator.py` |
 | Typed-input decoder | `typed_input_decoder.py` |
 | Settings (env-loaded) | `settings.py` |
-| Voice catalog | `voices.py` |
+| TTS provider selection | `tts_provider.py` |
+| Cartesia voice catalog | `voices.py` |
 | Codegenned types | `protocol/generated/` (don't edit) |
 
-Required env vars (loaded by `settings.load`): `DEEPGRAM_API_KEY`, `CARTESIA_API_KEY`. Optional: `RELAY_URL`, `CARTESIA_VOICE_ID`, `SESSION_TOKEN_SECRET`, `SENTRY_DSN`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `ENVIRONMENT`, `REGISTRY_DEFAULT_MODE`. All of these are stored in the `overwatch` Pipecat Cloud secret set.
+Required env vars (loaded by `settings.load`): `DEEPGRAM_API_KEY`, plus the API key for the default TTS path. `TTS_PROVIDER` defaults to `cartesia`, so `CARTESIA_API_KEY` is required by default. `TTS_PROVIDER=xai` requires `XAI_API_KEY` instead. Individual installs set their preferred TTS provider in `~/.overwatch/config.json` via `overwatch setup --tts cartesia|xai`; the gateway includes that value in the pairing QR, the phone persists it with the pairing, and `/api/sessions/start` forwards it as `tts_provider` after relay validation. If a user requests xAI, the deployment must have `XAI_API_KEY` configured. Optional voice settings: `CARTESIA_VOICE_ID`, `XAI_TTS_VOICE` (default `eve`), `XAI_TTS_LANGUAGE` (default `en`), `XAI_TTS_SAMPLE_RATE`, and `XAI_TTS_OPTIMIZE_STREAMING_LATENCY` (default on). Optional runtime settings: `RELAY_URL`, `SESSION_TOKEN_SECRET`, `SENTRY_DSN`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `ENVIRONMENT`, `REGISTRY_DEFAULT_MODE`, `STT_ENDPOINTING_MS`, `STT_UTTERANCE_END_MS`. Deepgram endpointing defaults to 1000 ms and utterance-end defaults to 2000 ms so short pauses inside one sentence do not fragment into multiple harness turns. These deployment-level values are stored in the `overwatch` Pipecat Cloud secret set.
 
 ### Mac daemon (`packages/session-host-daemon/`)
 
 A single Hono server + WebSocket client. Roles:
 
-- **`AdapterProtocolServer`** (`src/adapter-protocol/server.ts`) — connects out to `wss://relay/api/users/<id>/ws/host`, validates inbound envelopes (token + protocol-version + command-allowlist), dispatches to the active harness, and streams events back. Subscribes to `notificationStore` and surfaces scheduled-task notifications as `provider_event(overwatch/notification)` so the orchestrator can speak them.
+- **`AdapterProtocolServer`** (`src/adapter-protocol/server.ts`) — connects out to `wss://relay/api/users/<id>/ws/host`, validates inbound envelopes (token + protocol-version + command-allowlist), dispatches to the active harness, streams events back, and emits mobile UI snapshots (`harness_snapshot`, `monitor_snapshot`, `skills_snapshot`, `notification`). Subscribes to `notificationStore` and surfaces scheduled-task notifications as both typed `notification` server messages for hydration and `provider_event(overwatch/notification)` so the orchestrator can speak them.
 - **Harness fleet** (`src/harness/`) — three providers behind one async-iterable interface; see [004](004-harness-pluggability.md).
-- **Local REST API** — `/api/v1/monitors`, `/api/v1/tmux`, `/api/v1/hermes/webhook`, `/health`, `/debug/harness`. Mobile uses these for monitors/tmux UX.
+- **Local REST API** — `/api/v1/monitors`, `/api/v1/tmux`, `/api/v1/hermes/webhook`, `/health`, `/debug/harness`. The monitor REST shim remains useful locally, but mobile monitor UX now goes over the relay/orchestrator path via `monitor_action` → `manage_monitor`.
 - **Hermes bridges** (`src/scheduler/`) — only run when `HARNESS_PROVIDER=hermes`. See [005](005-hermes-bridge.md).
 
 Required env vars (loaded by `src/config.ts`): `OVERWATCH_USER_ID` and `ORCHESTRATOR_PAIRING_TOKEN` — bootstrapped via `overwatch setup`. The daemon refuses to connect to the relay without them and logs a clear message.
@@ -165,7 +172,22 @@ Every message between phone, relay, orchestrator, and daemon shares the `Envelop
 
 `protocol_version` is checked on receive both directions. Mismatched MAJOR → orchestrator drops with a warning, daemon responds with an explicit `error_response`.
 
-`HarnessCommand` is `submit_text | submit_with_steer | cancel`. `HarnessEvent` is a two-tier discriminated union: Tier 1 canonical events (`text_delta`, `assistant_message`, `reasoning_delta`, `tool_lifecycle`, `session_init`, `session_end`, `error`, `cancel_confirmed`) plus Tier 2 `provider_event` for everything provider-specific. Adapters never silently drop wire events — anything that doesn't map to Tier 1 surfaces as Tier 2.
+`HarnessCommand` is `submit_text | submit_with_steer | cancel | manage_monitor`. `manage_monitor` is only for authenticated UI monitor actions; it does not enter the user-turn inference path. `HarnessEvent` is a two-tier discriminated union: Tier 1 canonical events (`text_delta`, `assistant_message`, `reasoning_delta`, `tool_lifecycle`, `session_init`, `session_end`, `error`, `cancel_confirmed`, `agent_busy`, `agent_idle`) plus Tier 2 `provider_event` for everything provider-specific. Adapters never silently drop wire events — anything that doesn't map to Tier 1 surfaces as Tier 2.
+
+Mobile-facing `ServerMessage`s include the legacy `harness_state` snapshot for inference-gate bootstrapping plus richer UI messages: `harness_snapshot` (active provider, target namespace, provider registry, capabilities, in-flight state), `monitor_snapshot` (monitor rows plus action metadata), `skills_snapshot`, `notification`, and correlated `monitor_action_result`.
+
+## Provider Event Mapping
+
+Canonical Tier-1 mappings render consistently across Pi, Claude Code, and Hermes: `session_init` hydrates session/provider detail, `reasoning_delta` appends to the reasoning block, `tool_lifecycle` updates tool rows, `session_end` finalizes the active assistant turn, `error` surfaces an error row/notification, `cancel_confirmed` clears interruption state, and `agent_busy` / `agent_idle` gate user turns and monitor/manual controls.
+
+Provider-specific Tier-2 events use these namespaces:
+
+| Provider | Registry id | Event namespace | UI mapping notes |
+|---|---|---|---|
+| Pi | `pi-coding-agent` | `pi` | `memory_updated` becomes memory/provider activity; `scheduler_fired` becomes monitor activity when local monitors exist; `session_stats` becomes a lightweight stats row; unknown message updates are generic provider activity. |
+| Claude Code | `claude-code-cli` | `claude-code` | `compact_boundary`, `files_persisted`, `task_progress`, `prompt_suggestion`, `plugin_install`, and `tool_use_summary` render as compact provider activity/status rows. `rate_limit` and `auth_status` also create warning/error notifications. `hook_response` stays dropped unless product explicitly wants hook output visible. |
+| Hermes | `hermes` | `hermes` | `tool.started`, `tool.completed`, `reasoning.available`, `message.delta`, `message.completed`, `run.completed`, and `run.failed` are normalized to Tier 1. `memory.updated` becomes memory activity; `cron.triggered` becomes monitor activity. UI/router code should not depend on `hermes/run_completed`; the live mapper uses `run.completed` → `session_end`. |
+| Overwatch internal | n/a | `overwatch` | `notification`, `monitor_fired`, and `scheduled_task_done` hydrate notifications/monitor activity and may feed deferred context for the next user turn. |
 
 Schemas live in `protocol/schema/*.json`; codegen runs both ways. See [008-protocol-and-codegen.md](008-protocol-and-codegen.md).
 
@@ -176,6 +198,12 @@ Phone derives `session_token = HMAC-SHA256(pairing_token, "{session_id}|{expires
 ## Cancellation contract
 
 The bridge owns `_active_correlation_id`. New user input while a turn is in flight emits `submit_with_steer { cancels_correlation_id }`. The daemon abort-races the in-flight harness against a 2 s timer; on success it emits `cancel_confirmed`, on miss it emits `error("cancel_confirmed timeout")`. `StaleSuppression` ensures any frames from the cancelled correlation id are dropped after the cancel is acknowledged.
+
+## Busy and Compaction Contract
+
+`harness_in_flight` and `harness_busy` are separate gate states. In-flight means an answer turn is running and user input may preempt via `submit_with_steer`. Busy means the adapter is doing non-turn work, currently pi-coding-agent compaction, and the orchestrator must not send `submit_text`, `submit_with_steer`, or `cancel`.
+
+Adapters that can observe non-turn busy windows emit `agent_busy { phase: "compaction" | "tool" | "system" }` and later `agent_idle`. Today only the pi adapter maps native `compaction_start` / `compaction_end` to those Tier-1 events. While busy, the bridge stores the latest user text in `PendingUserInputBuffer` (last write wins) and leaves `DeferredUpdateBuffer` intact. On `agent_idle`, the held user turn is admitted automatically with any real injected context prepended. `interrupt_intent` still broadcasts Pipecat `InterruptionFrame`s so local TTS/output audio is stopped; it just does not poke the busy harness.
 
 ## Observability
 
@@ -190,12 +218,12 @@ The bridge owns `_active_correlation_id`. New user input while a turn is in flig
 
 | Surface | Command | Notes |
 |---|---|---|
-| Orchestrator | `pcc deploy --yes --force` from `pipecat/` | Reads `pcc-deploy.toml`. Cloud build, secret set `overwatch`, region `us-west`. |
+| Orchestrator | `./scripts/deploy-orchestrator.sh` from repo root | Runs `./scripts/predeploy.sh` first, then `pcc deploy --yes --force` from `pipecat/`. Raw `pcc deploy` is not the agent deploy path. |
 | Relay | `wrangler deploy` from `relay/` | DO migration v2 created `UserChannel`, deleted legacy `Room`. |
 | Mobile | `eas build -p ios` (or `expo run:ios`) | Native build required — Daily WebRTC needs the prebuild + native compile, not just Metro. |
 | Daemon | `overwatch start` (launchd-managed) | Bootstrapped via `overwatch setup`. |
 
-Live state at time of writing: orchestrator deployment `2441b7cd`, relay version `36ef18f4`. End-to-end relay → Pipecat Cloud → orchestrator boot path was verified against a synthetic session-start (the orchestrator correctly rejected a bogus token via `auth/token_validator.py`).
+Live state at time of writing: orchestrator cloud build `702f392c` (2026-05-06), relay version `4bf6b3e0`. End-to-end relay → Pipecat Cloud → orchestrator boot path was verified against a synthetic session-start (the orchestrator correctly rejected a bogus token via `auth/token_validator.py`).
 
 ## Invariants
 
@@ -208,6 +236,8 @@ These are the load-bearing rules. Violating them breaks correctness, not just st
 5. **Schema is the single source of truth.** Generated TS/Python files are read-only; edit `protocol/schema/` and re-run `npm run protocol:gen`. CI guard via `npm run protocol:check`.
 6. **The bridge is the only processor that emits `HarnessCommand`s.** The router only emits frames downstream (`LLMTextFrame`, `OutputTransportMessageFrame`).
 7. **Tokens are verified at every boundary they cross.** Phone derives, orchestrator verifies on session start, daemon verifies on every command.
+8. **No harness commands during adapter busy windows.** `agent_busy` blocks command admission but not local audio interruption; held user input remains user input and is delivered once after `agent_idle`.
+9. **Orchestrator deploys are gated.** `scripts/predeploy.sh` must pass before `scripts/deploy-orchestrator.sh` invokes Pipecat Cloud deploy.
 
 ## Where to look first when something breaks
 

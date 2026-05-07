@@ -31,9 +31,6 @@ import asyncio
 from typing import Any
 
 import pytest
-from pipecat.frames.frames import (
-    OutputTransportMessageFrame,  # noqa: F401
-)
 from pipecat.processors.frame_processor import FrameDirection
 
 from overwatch_pipeline.deferred_update_buffer import DeferredUpdateBuffer
@@ -161,15 +158,25 @@ async def test_journey_1_happy_path_voice_turn() -> None:
         )
         bridge._on_event(event)
 
-    # Router should have emitted three LLMTextFrames (2 text_delta, 1 assistant_message)
-    # and one OutputTransportMessageFrame (session_end → ui-only).
+    # The router brackets the LLM stream so Cartesia sees:
+    #   start → LLMTextFrame → LLMTextFrame → end
+    # assistant_message coalesces with text_delta (it carries the same
+    # content as the deltas combined) so its text is NOT re-emitted as TTS,
+    # and we deliberately don't double-forward streaming text via
+    # RTVIServerMessageFrame because RTVI auto-relays LLMTextFrames as
+    # `bot-llm-text` (the mobile transcript stream). session_end emits its
+    # ui-only RTVIServerMessageFrame after the close.
+    names = [n for n, _ in pushed]
+    assert names == [
+        "LLMFullResponseStartFrame",
+        "LLMTextFrame",
+        "LLMTextFrame",
+        "LLMFullResponseEndFrame",
+        "RTVIServerMessageFrame",  # session_end → ui-only
+    ]
     text_frames = [p for p in pushed if p[0] == "LLMTextFrame"]
-    assert len(text_frames) == 3
     assert any("It's " in p[1].text for p in text_frames)
     assert any("sunny" in p[1].text for p in text_frames)
-
-    server_frames = [p for p in pushed if p[0] == "OutputTransportMessageFrame"]
-    assert len(server_frames) == 1
 
     # Turn cleanup: session_end clears in-flight.
     assert not gate.harness_in_flight
@@ -285,9 +292,13 @@ async def test_journey_4_critical_alert_speaks() -> None:
         HarnessEventFrame(event=rate_limit), FrameDirection.DOWNSTREAM
     )
 
-    text_frames = [p for p in pushed if p[0] == "LLMTextFrame"]
-    assert len(text_frames) == 1
-    assert "Rate limited" in text_frames[0][1].text
+    # provider_event speakables are one-shot utterances; they emit
+    # TTSSpeakFrame (no LLM-response bracketing) AND a UI mirror.
+    speak_frames = [p for p in pushed if p[0] == "TTSSpeakFrame"]
+    assert len(speak_frames) == 1
+    assert "Rate limited" in speak_frames[0][1].text
+    ui_frames = [p for p in pushed if p[0] == "RTVIServerMessageFrame"]
+    assert len(ui_frames) == 1
 
     # And the registry priority is high (preempts the bot's current speech).
     cfg = lookup_config(rate_limit.root.model_dump(mode="json"))
@@ -313,9 +324,11 @@ async def test_journey_5_tool_lifecycle_flows_to_voice_and_buffer() -> None:
     await router.process_frame(
         HarnessEventFrame(event=start), FrameDirection.DOWNSTREAM
     )
-    text_frames = [p for p in pushed if p[0] == "LLMTextFrame"]
-    assert len(text_frames) == 1
-    assert "Running Read" in text_frames[0][1].text
+    # Tool start is ui-only (silent in audio, visible in UI).
+    speak_frames = [p for p in pushed if p[0] == "TTSSpeakFrame"]
+    assert speak_frames == []
+    ui_frames = [p for p in pushed if p[0] == "RTVIServerMessageFrame"]
+    assert len(ui_frames) == 1
 
     complete = wrap(
         ToolLifecycle,
@@ -330,9 +343,12 @@ async def test_journey_5_tool_lifecycle_flows_to_voice_and_buffer() -> None:
     await router.process_frame(
         HarnessEventFrame(event=complete), FrameDirection.DOWNSTREAM
     )
-    # Complete routes to inject — appended to buffer, no new audio.
-    text_frames_after = [p for p in pushed if p[0] == "LLMTextFrame"]
-    assert len(text_frames_after) == 1  # still only one (the start)
+    # Complete routes to inject — appended to buffer, no audio. The router
+    # also forwards a UI mirror so the transcript shows the completion.
+    speak_frames_after = [p for p in pushed if p[0] == "TTSSpeakFrame"]
+    assert speak_frames_after == []  # still no audio
+    ui_frames_after = [p for p in pushed if p[0] == "RTVIServerMessageFrame"]
+    assert len(ui_frames_after) == 2  # start + complete UI events
     assert len(buffer) == 1
 
 
@@ -360,5 +376,76 @@ async def test_journey_6_unknown_provider_event_does_not_speak() -> None:
     # In dev mode, default policy is ui-only → no LLMTextFrame.
     text_frames = [p for p in pushed if p[0] == "LLMTextFrame"]
     assert text_frames == []
-    server_frames = [p for p in pushed if p[0] == "OutputTransportMessageFrame"]
+    server_frames = [p for p in pushed if p[0] == "RTVIServerMessageFrame"]
     assert len(server_frames) == 1
+
+
+# ─── Journey 7: stale session_end must not false-idle ─────────────────────
+
+
+async def test_journey_7_stale_session_end_does_not_clear_active_turn() -> None:
+    """A late session_end from a *different* correlation must not clear
+    in-flight when a newer turn is already running. Otherwise the bridge
+    would mark itself idle while the real turn is still streaming.
+    """
+    bridge, _, client, gate, _, _ = make_pipeline()
+
+    await bridge._handle_user_input("first")
+    first_correlation = client.commands[0].correlation_id
+    assert gate.harness_in_flight
+
+    # Bridge moves on to a second turn (e.g. via steer; we simulate the
+    # state transition directly so we can isolate the stale-event path).
+    bridge._active_correlation_id = "second-correlation-id"
+
+    # Late session_end arrives FROM THE FIRST (now-cancelled) correlation.
+    stale = wrap(
+        SessionEnd,
+        type="session_end",
+        correlation_id=first_correlation,
+        target="claude-code",
+        subtype="success",
+        raw=None,
+    )
+    bridge._on_event(stale)
+
+    # gate must still be in-flight; the second correlation is still active.
+    assert gate.harness_in_flight
+    assert bridge._active_correlation_id == "second-correlation-id"
+
+    # When the *current* turn's session_end arrives, in-flight clears.
+    final = wrap(
+        SessionEnd,
+        type="session_end",
+        correlation_id="second-correlation-id",
+        target="claude-code",
+        subtype="success",
+        raw=None,
+    )
+    bridge._on_event(final)
+    assert not gate.harness_in_flight
+    assert bridge._active_correlation_id is None
+
+
+# ─── Journey 8: user barge-in while old audio is still speaking ───────────
+
+
+async def test_journey_8_user_input_preempts_old_bot_audio_when_harness_idle() -> (
+    None
+):
+    """If the harness is idle, old assistant audio must not delay the next
+    finalized user transcript. Barge-in audio cancellation is handled by
+    interruption frames; harness submission should happen promptly."""
+    bridge, _, client, gate, buffer, _ = make_pipeline()
+
+    # Harness idle, but the bot is mid-speech (post-LLM gate is tracking
+    # a BotStartedSpeakingFrame).
+    gate.update_bot_speaking(True)
+    assert not gate.can_run_now()
+
+    await bridge._handle_user_input("urgent question")
+    assert len(client.commands) == 1
+    assert client.commands[0].kind == "submit_text"
+    assert client.commands[0].payload.text == "urgent question"
+    assert bridge._pending_user_input.peek() is None  # noqa: SLF001
+    assert len(buffer) == 0

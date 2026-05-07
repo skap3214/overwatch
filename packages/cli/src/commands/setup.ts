@@ -33,6 +33,7 @@ import {
   setupTerminal,
   userHasCmux,
 } from "../terminal-setup.js";
+import { getPinnedPiCodingAgentGlobalInstallCommand } from "../pinned-pi-coding-agent.js";
 
 function ask(
   rl: ReturnType<typeof createInterface>,
@@ -132,7 +133,7 @@ function isPiInstalled(): boolean {
 }
 
 function piInstallInstruction(): string {
-  return "npm install -g @mariozechner/pi-coding-agent";
+  return getPinnedPiCodingAgentGlobalInstallCommand();
 }
 
 async function loginWithSDK(
@@ -243,6 +244,8 @@ export interface SetupOptions {
   agentProvider?: string;
   terminal?: string[];
   deepgramKey?: string;
+  cartesiaKey?: string;
+  xaiKey?: string;
   stt?: string;
   tts?: string;
   sttModel?: string;
@@ -267,10 +270,19 @@ function normalizeAgentId(value: string | undefined): AgentId {
   );
 }
 
-function normalizeSpeechProvider(kind: "stt" | "tts", value: string): "deepgram" {
+function normalizeSpeechProvider(kind: "stt", value: string): NonNullable<OverwatchConfig["sttProvider"]>;
+function normalizeSpeechProvider(kind: "tts", value: string): NonNullable<OverwatchConfig["ttsProvider"]>;
+function normalizeSpeechProvider(
+  kind: "stt" | "tts",
+  value: string,
+): NonNullable<OverwatchConfig["sttProvider" | "ttsProvider"]> {
   const normalized = value.trim().toLowerCase();
-  if (normalized === "deepgram") return "deepgram";
-  throw new Error(`Unknown ${kind.toUpperCase()} provider "${value}". Only deepgram is supported for now.`);
+  if (kind === "stt") {
+    if (normalized === "deepgram") return "deepgram";
+    throw new Error(`Unknown STT provider "${value}". Only deepgram is supported for now.`);
+  }
+  if (normalized === "cartesia" || normalized === "xai") return normalized;
+  throw new Error(`Unknown TTS provider "${value}". Use cartesia or xai.`);
 }
 
 function commandExists(command: string): boolean {
@@ -576,15 +588,13 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
     console.log(chalk.green("✓") + ` STT model set to ${config.sttModel}`);
   }
   if (options.ttsModel) {
-    config.ttsProvider = config.ttsProvider ?? "deepgram";
     config.ttsModel = options.ttsModel.trim();
     console.log(chalk.green("✓") + ` TTS model set to ${config.ttsModel}`);
   }
   if (options.deepgramKey) {
     config.deepgramApiKey = options.deepgramKey.trim();
     config.sttProvider = config.sttProvider ?? "deepgram";
-    config.ttsProvider = config.ttsProvider ?? "deepgram";
-    console.log(chalk.green("✓") + " Deepgram API key set for STT + TTS");
+    console.log(chalk.green("✓") + " Deepgram API key set for STT");
   } else if (!nonInteractive) {
     const answer = await ask(
       rl,
@@ -596,6 +606,14 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
       config.deepgramApiKey = answer.trim();
       console.log(chalk.green("✓") + " Deepgram API key updated");
     }
+  }
+  if (options.cartesiaKey) {
+    config.cartesiaApiKey = options.cartesiaKey.trim();
+    console.log(chalk.green("✓") + " Cartesia API key saved");
+  }
+  if (options.xaiKey) {
+    config.xaiApiKey = options.xaiKey.trim();
+    console.log(chalk.green("✓") + " xAI API key saved");
   }
 
   let skillsReady = true;

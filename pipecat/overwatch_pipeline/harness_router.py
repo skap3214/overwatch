@@ -44,13 +44,19 @@ HARNESS_EVENT_CONFIGS: dict[str, HarnessEventConfig] = {
         "speak", priority=8, coalesce_with="text_delta"
     ),
     "reasoning_delta": HarnessEventConfig("inject", priority=3),
-    "tool_lifecycle:start": HarnessEventConfig("speak", priority=6),
+    # Tool lifecycle is silent (not spoken) but always visible in the
+    # mobile transcript — the router additionally forwards a
+    # `harness_event` server-message for ui-only AND inject AND speak
+    # events so the UI never misses a tool-call beat.
+    "tool_lifecycle:start": HarnessEventConfig("ui-only", priority=4),
     "tool_lifecycle:progress": HarnessEventConfig("ui-only", priority=4),
     "tool_lifecycle:complete": HarnessEventConfig("inject", priority=4),
     "session_init": HarnessEventConfig("inject", priority=1),
     "session_end": HarnessEventConfig("ui-only", priority=2),
     "error": HarnessEventConfig("speak", priority=9),
     "cancel_confirmed": HarnessEventConfig("ui-only", priority=2),
+    "agent_busy": HarnessEventConfig("ui-only", priority=2),
+    "agent_idle": HarnessEventConfig("ui-only", priority=2),
     # ─── Tier 2 — Claude Code provider-specific ─────────────────────────────
     "claude-code/compact_boundary": HarnessEventConfig(
         "ui-only", priority=2, provider="claude-code"

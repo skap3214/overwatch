@@ -73,11 +73,18 @@ The skill uses minimal `name` + `description` frontmatter so it works across eve
 | `paused_at` (truthy) | `paused: true` |
 | `repeat` | `repeat` |
 
-A poll-tick callback (`onJobFired`) detects `last_run_at` advances and creates a `NotificationEvent` of kind `scheduled_task_result` (or `scheduled_task_error`), summarizing the run output read from `~/.hermes/cron/output/{job_id}/{timestamp}.md`. The daemon's `AdapterProtocolServer` subscribes to `notificationStore` and forwards new notifications to the orchestrator as `provider_event(overwatch/notification)`, which `HARNESS_EVENT_CONFIGS` routes to `speak`.
+A poll-tick callback (`onJobFired`) detects `last_run_at` advances and creates a `NotificationEvent` of kind `scheduled_task_result` (or `scheduled_task_error`), summarizing the run output read from `~/.hermes/cron/output/{job_id}/{timestamp}.md`. The daemon's `AdapterProtocolServer` subscribes to `notificationStore` and forwards new notifications to the orchestrator as typed `notification` server messages for mobile hydration and as `provider_event(overwatch/notification)`, which `HARNESS_EVENT_CONFIGS` routes to `speak`.
 
-### REST shim
+### Monitor control
 
-`packages/session-host-daemon/src/routes/monitors.ts` exposes `/api/v1/monitors/*` endpoints that proxy to Hermes `/api/jobs`. Mobile uses these for create/edit/pause/resume/run/delete and for run history. In local mode the same shim talks to `LocalMonitorSource`. Mobile is mode-agnostic.
+`packages/session-host-daemon/src/routes/monitors.ts` still exposes `/api/v1/monitors/*` endpoints for local debugging and CLI-adjacent flows. Mobile no longer calls daemon REST directly after the cloud overhaul. Instead:
+
+1. `HermesJobsBridge` is the `MonitorSource` and emits `monitor_snapshot` rows through the adapter protocol.
+2. Mobile sends RTVI `monitor_action` client messages.
+3. The orchestrator decodes those into `ManageMonitor` harness commands.
+4. `AdapterProtocolServer` routes Hermes actions to `/api/jobs` (`create`, `update`, `delete`, `pause`, `resume`, `run_now`) or local run-history readers (`list_runs`, `read_run`) and replies with `monitor_action_result`.
+
+In non-Hermes mode, the same snapshot surface is backed by `LocalMonitorSource`. Local monitor creation/deletion is available, but pause/resume/run-now/run-history are disabled in `monitor_snapshot.actions` because local cron execution is retired.
 
 ### Webhook delivery (push, opt-in)
 
@@ -85,7 +92,7 @@ A poll-tick callback (`onJobFired`) detects `last_run_at` advances and creates a
 
 ## Skills surface — `HermesSkillsBridge`
 
-`packages/session-host-daemon/src/scheduler/hermes-skills-bridge.ts` walks `~/.hermes/skills/` every 60s and emits a `skill.snapshot` envelope (`{name, description, category, enabled, version}` per skill). Mobile renders a "Hermes • N skills" pill in the header that opens a read-only modal listing skills grouped by category. Editing/installing skills is left to `hermes` CLI / dashboard.
+`packages/session-host-daemon/src/scheduler/hermes-skills-bridge.ts` walks `~/.hermes/skills/` every 60s and emits a `{name, description, category, enabled, version}` list. `AdapterProtocolServer` forwards this as a typed `skills_snapshot`. Mobile renders a "Hermes • N skills" pill in the header that opens a read-only modal listing skills grouped by category. Editing/installing skills is left to `hermes` CLI / dashboard.
 
 ## Sessions
 

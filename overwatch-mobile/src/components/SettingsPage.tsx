@@ -23,7 +23,6 @@ import { usePairingStore } from "../stores/pairing-store";
 import { useConversationStore } from "../stores/conversation";
 import { useColors } from "../theme";
 import { QRScanner } from "./QRScanner";
-import { HarnessInfoSection } from "./HarnessInfoSection";
 
 type Props = { onClose: () => void };
 
@@ -199,8 +198,6 @@ export function SettingsPage({ onClose }: Props) {
           </Pressable>
         )}
       </View>
-
-      <HarnessInfoSection />
 
       {/* Theme */}
       <View

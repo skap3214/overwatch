@@ -9,8 +9,6 @@ import pytest
 
 from overwatch_pipeline.inference_gate import InferenceGateState
 
-pytestmark = pytest.mark.asyncio
-
 
 def test_can_run_now_initially_true() -> None:
     state = InferenceGateState()
@@ -33,6 +31,17 @@ def test_blocks_when_bot_speaking_with_cooldown() -> None:
     state.update_bot_speaking(False)
     # Cooldown: should still block immediately
     assert state.can_run_now() is False
+
+
+def test_user_turn_admission_ignores_old_bot_audio_and_cooldown() -> None:
+    state = InferenceGateState(cooldown_seconds=10.0)
+    state.update_bot_speaking(True)
+    assert state.can_run_now() is False
+    assert state.can_accept_user_turn_now() is True
+
+    state.update_bot_speaking(False)
+    assert state.can_run_now() is False
+    assert state.can_accept_user_turn_now() is True
 
 
 def test_cooldown_clears_after_threshold() -> None:
@@ -59,6 +68,15 @@ def test_blocks_when_cancel_pending() -> None:
     assert state.can_run_now() is True
 
 
+def test_cancel_pending_auto_expires() -> None:
+    state = InferenceGateState(cancel_confirm_timeout_seconds=0.01)
+    state.mark_cancel_pending("turn-1")
+    assert state.can_run_now() is False
+    state._cancel_pending["turn-1"] = time.monotonic() - 0.01  # noqa: SLF001
+    assert state.can_run_now() is True
+
+
+@pytest.mark.asyncio
 async def test_wait_until_runnable_unblocks() -> None:
     state = InferenceGateState(cooldown_seconds=0.0)
     state.update_user_speaking(True)

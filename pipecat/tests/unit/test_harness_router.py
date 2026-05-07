@@ -17,7 +17,10 @@ def test_tier1_text_delta_speaks() -> None:
 
 
 def test_tool_lifecycle_phases_route_correctly() -> None:
-    assert lookup_config({"type": "tool_lifecycle", "phase": "start"}).voice_action == "speak"
+    # Tool lifecycle is always silent in audio. The router additionally
+    # forwards a UI mirror for ui-only / inject / speak events so the user
+    # sees the tool call appear in the transcript regardless.
+    assert lookup_config({"type": "tool_lifecycle", "phase": "start"}).voice_action == "ui-only"
     assert lookup_config({"type": "tool_lifecycle", "phase": "complete"}).voice_action == "inject"
     assert lookup_config({"type": "tool_lifecycle", "phase": "progress"}).voice_action == "ui-only"
 
