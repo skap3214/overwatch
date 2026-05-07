@@ -38,6 +38,7 @@ export default function App() {
   const relayUrl = usePairingStore((s) => s.relayUrl);
   const userId = usePairingStore((s) => s.userId);
   const pairingToken = usePairingStore((s) => s.pairingToken);
+  const sttProvider = usePairingStore((s) => s.sttProvider);
   const ttsProvider = usePairingStore((s) => s.ttsProvider);
   const hydratePairing = usePairingStore((s) => s.hydrate);
 
@@ -150,6 +151,7 @@ export default function App() {
             user_id: userId,
             pairing_token: pairingToken,
             session_token: sessionToken,
+            stt_provider: sttProvider,
             tts_provider: ttsProvider,
           }),
         });
@@ -205,6 +207,7 @@ export default function App() {
     relayUrl,
     userId,
     pairingToken,
+    sttProvider,
     ttsProvider,
     connect,
     disconnect,

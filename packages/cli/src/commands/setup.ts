@@ -276,10 +276,11 @@ function normalizeSpeechProvider(
   kind: "stt" | "tts",
   value: string,
 ): NonNullable<OverwatchConfig["sttProvider" | "ttsProvider"]> {
-  const normalized = value.trim().toLowerCase();
+  let normalized = value.trim().toLowerCase();
+  if (normalized === "grok") normalized = "xai";
   if (kind === "stt") {
-    if (normalized === "deepgram") return "deepgram";
-    throw new Error(`Unknown STT provider "${value}". Only deepgram is supported for now.`);
+    if (normalized === "deepgram" || normalized === "xai") return normalized;
+    throw new Error(`Unknown STT provider "${value}". Use deepgram, xai, or grok.`);
   }
   if (normalized === "cartesia" || normalized === "xai") return normalized;
   throw new Error(`Unknown TTS provider "${value}". Use cartesia or xai.`);
@@ -327,8 +328,14 @@ export function getNonInteractiveSetupIssues(
     (value) => !allowedTerminals.has(value.trim().toLowerCase()),
   );
 
-  if (!options.deepgramKey?.trim() && !context.config.deepgramApiKey) {
+  const effectiveSttProvider = options.stt
+    ? normalizeSpeechProvider("stt", options.stt)
+    : context.config.sttProvider ?? "deepgram";
+  if (effectiveSttProvider === "deepgram" && !options.deepgramKey?.trim() && !context.config.deepgramApiKey) {
     issues.push("Provide --deepgram-key <key> or configure Deepgram before running non-interactively.");
+  }
+  if (effectiveSttProvider === "xai" && !options.xaiKey?.trim() && !context.config.xaiApiKey) {
+    issues.push("Provide --xai-key <key> or configure xAI before running non-interactively with --stt xai.");
   }
 
   if (context.agentId === "pi-coding-agent") {
@@ -414,6 +421,7 @@ function printNonInteractiveIssues(issues: string[]): void {
 
 function printRemainingActions(options: {
   configHasDeepgram: boolean;
+  sttProvider: string;
   agentId: AgentId;
   agentState: AgentAuthState;
   terminalReady: boolean;
@@ -433,7 +441,7 @@ function printRemainingActions(options: {
   } else if (options.agentId === "claude-code-cli" && !commandExists("claude")) {
     actions.push("Install Claude Code CLI so `claude` is available on PATH.");
   }
-  if (!options.configHasDeepgram) {
+  if (options.sttProvider === "deepgram" && !options.configHasDeepgram) {
     actions.push(
       "Add a Deepgram key with `overwatch setup --deepgram-key <KEY>`."
     );
@@ -595,10 +603,10 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
     config.deepgramApiKey = options.deepgramKey.trim();
     config.sttProvider = config.sttProvider ?? "deepgram";
     console.log(chalk.green("✓") + " Deepgram API key set for STT");
-  } else if (!nonInteractive) {
+  } else if (!nonInteractive && (config.sttProvider ?? "deepgram") === "deepgram") {
     const answer = await ask(
       rl,
-      `Deepgram API key (used for STT + TTS)${
+      `Deepgram API key (used for STT)${
         config.deepgramApiKey ? chalk.dim(" (enter to keep current)") : ""
       }: `
     );
@@ -675,6 +683,7 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
 
   printRemainingActions({
     configHasDeepgram: Boolean(config.deepgramApiKey),
+    sttProvider: config.sttProvider ?? "deepgram",
     agentId,
     agentState,
     terminalReady,

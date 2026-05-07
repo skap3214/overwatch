@@ -124,6 +124,7 @@ function qrPayload(
     r: status.relayUrl,
     u: pairing.userId,
     t: pairing.pairingToken,
+    stt: config.sttProvider ?? "deepgram",
     tts: config.ttsProvider ?? "cartesia",
   });
 }
@@ -173,7 +174,8 @@ export function printGatewayInfo(status = readGatewayStatus()): boolean {
   // even when only the status is loaded.
   const pairing = loadOrCreatePairing();
   printPairingDetails(pairing.userId, qrPayload(status, pairing));
-  console.log(chalk.dim(`TTS: ${loadConfig().ttsProvider ?? "cartesia"}`));
+  const gwConfig = loadConfig();
+  console.log(chalk.dim(`STT: ${gwConfig.sttProvider ?? "deepgram"} · TTS: ${gwConfig.ttsProvider ?? "cartesia"}`));
   console.log(chalk.dim(`Relay: ${status.relayUrl}`));
   console.log(chalk.dim(`Status updated: ${status.updatedAt}`));
   console.log("");

@@ -77,6 +77,49 @@ test("non-interactive setup validates terminal names before editing files", () =
   assert.match(issues.join("\n"), /warp/);
 });
 
+test("non-interactive setup with --stt xai requires xai key, not deepgram", () => {
+  const issuesNoKey = getNonInteractiveSetupIssues(
+    {
+      nonInteractive: true,
+      stt: "xai",
+      agentAuthFile: "/tmp/auth.json",
+      terminal: ["existing-tmux"],
+    },
+    context({ agentAuthFileUsable: () => true }),
+  );
+
+  assert.match(issuesNoKey.join("\n"), /xai-key|xAI/i);
+  assert.ok(!issuesNoKey.join("\n").includes("Deepgram"));
+
+  const issuesWithKey = getNonInteractiveSetupIssues(
+    {
+      nonInteractive: true,
+      stt: "xai",
+      xaiKey: "xai-key",
+      agentAuthFile: "/tmp/auth.json",
+      terminal: ["existing-tmux"],
+    },
+    context({ agentAuthFileUsable: () => true }),
+  );
+
+  assert.deepEqual(issuesWithKey, []);
+});
+
+test("non-interactive setup with --stt grok normalizes to xai", () => {
+  const issues = getNonInteractiveSetupIssues(
+    {
+      nonInteractive: true,
+      stt: "grok",
+      xaiKey: "xai-key",
+      agentAuthFile: "/tmp/auth.json",
+      terminal: ["existing-tmux"],
+    },
+    context({ agentAuthFileUsable: () => true }),
+  );
+
+  assert.deepEqual(issues, []);
+});
+
 test("non-interactive setup validates agent-specific prerequisites", () => {
   const claudeIssues = getNonInteractiveSetupIssues(
     { nonInteractive: true, deepgramKey: "dg-key", terminal: ["existing-tmux"] },

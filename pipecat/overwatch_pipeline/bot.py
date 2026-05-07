@@ -3,7 +3,7 @@
 This is the entrypoint Pipecat Cloud invokes per session. The shape:
 
     transport.input
-      → DeepgramSTTService (streaming Nova-3)
+      → configured streaming STT provider (Deepgram or xAI)
       → IdleReportProcessor                (parallel)
       → PreLLMInferenceGate
       → user_aggregator (Silero VAD + smart-turn)
@@ -29,6 +29,7 @@ from loguru import logger
 from .harness_adapter_client import HarnessAdapterClient, RelayClient
 from .pipeline_factory import build_orchestrator_pipeline
 from .settings import Settings, load
+from .stt_provider import create_stt_service
 from .tts_provider import create_tts_service
 
 
@@ -45,7 +46,6 @@ async def bot(runner_args) -> None:  # noqa: ANN001
     from pipecat.pipeline.runner import PipelineRunner
     from pipecat.pipeline.task import PipelineParams, PipelineTask
     from pipecat.runner.types import DailyRunnerArguments
-    from pipecat.services.deepgram.stt import DeepgramSTTService, DeepgramSTTSettings
     from pipecat.transports.daily.transport import DailyParams, DailyTransport
     from pipecat.turns.user_start.vad_user_turn_start_strategy import (
         VADUserTurnStartStrategy,
@@ -84,6 +84,7 @@ async def bot(runner_args) -> None:  # noqa: ANN001
     user_id = body.get("user_id") or "alpha"
     session_token = body.get("session_token") or ""
     orchestrator_token = body.get("orchestrator_token") or ""
+    stt_provider = body.get("stt_provider")
     tts_provider = body.get("tts_provider")
     target = body.get("default_target") or "claude-code"
 
@@ -110,20 +111,9 @@ async def bot(runner_args) -> None:  # noqa: ANN001
         "bot.daily_audio_params audio_out_10ms_chunks=1 audio_out_enabled=True"
     )
 
-    # Keyterm prompting biases Nova-3 toward project / tool / agent names
-    # that mainstream models routinely garble (tmux, Hermes, Codex, etc).
-    # See settings.DEFAULT_STT_KEYTERMS; override via STT_KEYTERMS env.
-    stt_settings_kwargs: dict = {
-        "model": "nova-3",
-        "interim_results": True,
-        "endpointing": settings.stt_endpointing_ms,
-        "utterance_end_ms": settings.stt_utterance_end_ms,
-    }
-    if settings.stt_keyterms:
-        stt_settings_kwargs["keyterm"] = list(settings.stt_keyterms)
-    stt = DeepgramSTTService(
-        api_key=settings.deepgram_api_key,
-        settings=DeepgramSTTSettings(**stt_settings_kwargs),
+    stt = create_stt_service(
+        settings,
+        requested_provider=stt_provider if isinstance(stt_provider, str) else None,
     )
 
     tts = create_tts_service(

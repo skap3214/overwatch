@@ -1810,7 +1810,7 @@ dependencies = [
     { name = "loguru" },
     { name = "opentelemetry-exporter-otlp" },
     { name = "opentelemetry-sdk" },
-    { name = "pipecat-ai", extra = ["cartesia", "daily", "deepgram", "openai", "runner", "webrtc"] },
+    { name = "pipecat-ai", extra = ["cartesia", "daily", "deepgram", "openai", "runner", "webrtc", "xai"] },
     { name = "pipecatcloud" },
     { name = "prometheus-client" },
     { name = "pydantic" },
@@ -1834,7 +1834,7 @@ requires-dist = [
     { name = "loguru", specifier = ">=0.7" },
     { name = "opentelemetry-exporter-otlp", specifier = ">=1.27" },
     { name = "opentelemetry-sdk", specifier = ">=1.27" },
-    { name = "pipecat-ai", extras = ["daily", "deepgram", "cartesia", "silero", "smart-turn", "openai", "webrtc", "runner"], specifier = ">=0.0.94" },
+    { name = "pipecat-ai", extras = ["daily", "deepgram", "cartesia", "xai", "silero", "smart-turn", "openai", "webrtc", "runner"], specifier = ">=0.0.94" },
     { name = "pipecatcloud", specifier = ">=0.4.4" },
     { name = "prometheus-client", specifier = ">=0.21" },
     { name = "pydantic", specifier = ">=2.13" },
@@ -1992,6 +1992,9 @@ runner = [
 webrtc = [
     { name = "aiortc" },
     { name = "opencv-python" },
+]
+xai = [
+    { name = "websockets" },
 ]
 
 [[package]]

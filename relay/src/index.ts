@@ -104,6 +104,13 @@ function timingSafeStringEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+function normalizeSTTProvider(value: string | undefined): "deepgram" | "xai" | undefined | null {
+  if (value === undefined || value === "") return undefined;
+  if (value === "grok") return "xai";
+  if (value === "deepgram" || value === "xai") return value;
+  return null;
+}
+
 function normalizeTTSProvider(value: string | undefined): "cartesia" | "xai" | undefined | null {
   if (value === undefined || value === "") return undefined;
   if (value === "cartesia" || value === "xai") return value;
@@ -153,6 +160,7 @@ export default {
         user_id?: string;
         pairing_token?: string;
         session_token?: string;
+        stt_provider?: string;
         tts_provider?: string;
       };
       try {
@@ -160,6 +168,7 @@ export default {
           user_id?: string;
           pairing_token?: string;
           session_token?: string;
+          stt_provider?: string;
           tts_provider?: string;
         };
       } catch {
@@ -174,6 +183,14 @@ export default {
           {
             error: "user_id, pairing_token, and session_token required",
           },
+          { status: 400, headers: corsHeaders },
+        );
+      }
+
+      const sttProvider = normalizeSTTProvider(body.stt_provider);
+      if (sttProvider === null) {
+        return Response.json(
+          { error: "stt_provider must be deepgram or xai" },
           { status: 400, headers: corsHeaders },
         );
       }
@@ -243,6 +260,7 @@ export default {
               user_id: body.user_id,
               session_token: body.session_token,
               orchestrator_token: orchestratorToken,
+              ...(sttProvider ? { stt_provider: sttProvider } : {}),
               ...(ttsProvider ? { tts_provider: ttsProvider } : {}),
             },
           }),

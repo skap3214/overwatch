@@ -9,7 +9,7 @@ export interface OverwatchConfig {
   deepgramApiKey?: string;
   cartesiaApiKey?: string;
   xaiApiKey?: string;
-  sttProvider?: "deepgram";
+  sttProvider?: "deepgram" | "xai";
   ttsProvider?: "cartesia" | "xai";
   sttModel?: string;
   ttsModel?: string;
@@ -44,6 +44,10 @@ export function loadConfig(): OverwatchConfig {
   if (!existsSync(CONFIG_PATH)) return { ...DEFAULTS };
   try {
     const stored = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+    const sttProvider =
+      stored.sttProvider === "deepgram" || stored.sttProvider === "xai"
+        ? stored.sttProvider
+        : DEFAULTS.sttProvider;
     const ttsProvider =
       stored.ttsProvider === "xai" || stored.ttsProvider === "cartesia"
         ? stored.ttsProvider
@@ -51,6 +55,7 @@ export function loadConfig(): OverwatchConfig {
     return {
       ...DEFAULTS,
       ...stored,
+      sttProvider,
       ttsProvider,
       gateway: { ...DEFAULTS.gateway, ...stored.gateway },
     };

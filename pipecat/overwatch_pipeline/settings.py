@@ -44,14 +44,18 @@ DEFAULT_STT_KEYTERMS: tuple[str, ...] = (
 @dataclass(frozen=True)
 class Settings:
     # ─── Voice providers ────────────────────────────────────────────────────
-    deepgram_api_key: str
+    deepgram_api_key: str = ""
     cartesia_api_key: str = ""
     xai_api_key: str = ""
+    stt_provider: str = "deepgram"
     # Deepgram Nova-3 keyterm-prompting list. See DEFAULT_STT_KEYTERMS above.
     stt_keyterms: tuple[str, ...] = DEFAULT_STT_KEYTERMS
     stt_endpointing_ms: int = 1000
     stt_utterance_end_ms: int = 2000
     tts_provider: str = "cartesia"
+
+    # ─── xAI STT ────────────────────────────────────────────────────────────
+    xai_stt_language: str = "en"
 
     # ─── Cartesia voice ─────────────────────────────────────────────────────
     cartesia_voice_id: str = "a0e99841-438c-4a64-b679-ae501e7d6091"  # Cartesia "Brooke"
@@ -93,21 +97,22 @@ class Settings:
 
 def load() -> Settings:
     """Load settings from env. Pipecat Cloud injects secrets at container startup."""
+    stt_provider = _parse_stt_provider(os.getenv("STT_PROVIDER"))
     tts_provider = _parse_tts_provider(os.getenv("TTS_PROVIDER"))
+    needs_xai = stt_provider == "xai" or tts_provider == "xai"
     return Settings(
-        deepgram_api_key=_required("DEEPGRAM_API_KEY"),
+        deepgram_api_key=_required_if("DEEPGRAM_API_KEY", stt_provider == "deepgram"),
         cartesia_api_key=_required_if(
             "CARTESIA_API_KEY",
             tts_provider == "cartesia",
         ),
-        xai_api_key=_required_if(
-            "XAI_API_KEY",
-            tts_provider == "xai",
-        ),
+        xai_api_key=_required_if("XAI_API_KEY", needs_xai),
+        stt_provider=stt_provider,
         stt_keyterms=_parse_keyterms(os.getenv("STT_KEYTERMS")),
         stt_endpointing_ms=int(os.getenv("STT_ENDPOINTING_MS", "1000")),
         stt_utterance_end_ms=int(os.getenv("STT_UTTERANCE_END_MS", "2000")),
         tts_provider=tts_provider,
+        xai_stt_language=os.getenv("XAI_STT_LANGUAGE", Settings.xai_stt_language),
         cartesia_voice_id=os.getenv(
             "CARTESIA_VOICE_ID", Settings.cartesia_voice_id
         ),
@@ -177,6 +182,18 @@ def _parse_keyterms(raw: str | None) -> tuple[str, ...]:
     if not stripped or stripped.lower() in {"off", "none", "false"}:
         return ()
     return tuple(t.strip() for t in stripped.split(",") if t.strip())
+
+
+def _parse_stt_provider(raw: str | None) -> str:
+    provider = (raw or "deepgram").strip().lower()
+    if provider == "grok":
+        provider = "xai"
+    if provider not in {"deepgram", "xai"}:
+        raise RuntimeError(
+            "invalid STT_PROVIDER: "
+            f"{provider!r} (expected 'deepgram' or 'xai')"
+        )
+    return provider
 
 
 def _parse_tts_provider(raw: str | None) -> str:

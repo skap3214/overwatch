@@ -101,7 +101,7 @@ the regression harness share the same composition:
 transport.input
   → TypedInputDecoder        # RTVI client-message → UserTextInputFrame / MonitorActionFrame
   → InterruptionEmitter      # VAD / interrupt-intent → InterruptionFrame broadcast
-  → DeepgramSTTService       # Nova-3 streaming
+  → configured streaming STT # Deepgram Nova-3 or xAI WebSocket
   → UserTurnProcessor        # smart-turn stop strategy for pause-safe turns
   → IdleReportProcessor      # injects "agent is idle" updates
   → PreLLMInferenceGate      # admit/deny based on InferenceGateState
@@ -132,11 +132,12 @@ Files of note:
 | Token validator (boundary check) | `auth/token_validator.py` |
 | Typed-input decoder | `typed_input_decoder.py` |
 | Settings (env-loaded) | `settings.py` |
+| STT provider selection | `stt_provider.py` |
 | TTS provider selection | `tts_provider.py` |
 | Cartesia voice catalog | `voices.py` |
 | Codegenned types | `protocol/generated/` (don't edit) |
 
-Required env vars (loaded by `settings.load`): `DEEPGRAM_API_KEY`, plus the API key for the default TTS path. `TTS_PROVIDER` defaults to `cartesia`, so `CARTESIA_API_KEY` is required by default. `TTS_PROVIDER=xai` requires `XAI_API_KEY` instead. Individual installs set their preferred TTS provider in `~/.overwatch/config.json` via `overwatch setup --tts cartesia|xai`; the gateway includes that value in the pairing QR, the phone persists it with the pairing, and `/api/sessions/start` forwards it as `tts_provider` after relay validation. If a user requests xAI, the deployment must have `XAI_API_KEY` configured. Optional voice settings: `CARTESIA_VOICE_ID`, `XAI_TTS_VOICE` (default `eve`), `XAI_TTS_LANGUAGE` (default `en`), `XAI_TTS_SAMPLE_RATE`, and `XAI_TTS_OPTIMIZE_STREAMING_LATENCY` (default on). Optional runtime settings: `RELAY_URL`, `SESSION_TOKEN_SECRET`, `SENTRY_DSN`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `ENVIRONMENT`, `REGISTRY_DEFAULT_MODE`, `STT_ENDPOINTING_MS`, `STT_UTTERANCE_END_MS`. Deepgram endpointing defaults to 1000 ms and utterance-end defaults to 2000 ms so short pauses inside one sentence do not fragment into multiple harness turns. These deployment-level values are stored in the `overwatch` Pipecat Cloud secret set.
+Required env vars (loaded by `settings.load`): the API keys for the configured STT and TTS providers. `STT_PROVIDER` defaults to `deepgram`, so `DEEPGRAM_API_KEY` is required by default; `STT_PROVIDER=xai` requires `XAI_API_KEY` instead. `TTS_PROVIDER` defaults to `cartesia`, so `CARTESIA_API_KEY` is required by default; `TTS_PROVIDER=xai` requires `XAI_API_KEY` instead. When both STT and TTS are set to `xai`, a single `XAI_API_KEY` satisfies both. Individual installs set their preferred providers in `~/.overwatch/config.json` via `overwatch setup --stt deepgram|xai|grok --tts cartesia|xai`; the gateway includes both values in the pairing QR, the phone persists them with the pairing, and `/api/sessions/start` forwards them as `stt_provider` and `tts_provider` after relay validation. Optional voice settings: `CARTESIA_VOICE_ID`, `XAI_STT_LANGUAGE` (default `en`), `XAI_TTS_VOICE` (default `eve`), `XAI_TTS_LANGUAGE` (default `en`), `XAI_TTS_SAMPLE_RATE`, and `XAI_TTS_OPTIMIZE_STREAMING_LATENCY` (default on). Optional runtime settings: `RELAY_URL`, `SESSION_TOKEN_SECRET`, `SENTRY_DSN`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `ENVIRONMENT`, `REGISTRY_DEFAULT_MODE`, `STT_ENDPOINTING_MS`, `STT_UTTERANCE_END_MS`. Endpointing defaults to 1000 ms; `STT_UTTERANCE_END_MS` (Deepgram-only) defaults to 2000 ms so short pauses inside one sentence do not fragment into multiple harness turns. These deployment-level values are stored in the `overwatch` Pipecat Cloud secret set.
 
 ### Mac daemon (`packages/session-host-daemon/`)
 

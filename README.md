@@ -86,7 +86,8 @@ overwatch setup --non-interactive --deepgram-key <KEY> --agent-auth-file /path/t
 overwatch setup --terminal ghostty --terminal kitty
 overwatch setup --agent hermes
 overwatch setup --agent-provider anthropic
-overwatch setup --stt deepgram --tts deepgram --stt-model nova-3 --tts-model aura-2-aries-en
+overwatch setup --stt deepgram --tts cartesia --stt-model nova-3
+overwatch setup --stt xai --tts xai --xai-key <KEY>
 overwatch setup --skills off
 npx skills@latest add skap3214/overwatch/.agents/skills/overwatch --global --all --copy
 ```
@@ -136,9 +137,9 @@ iPhone ─ WebRTC ─ Pipecat Cloud (Python orchestrator)
 
 - **Phone (RN/Expo)**: Pipecat RN client — joins a Pipecat Cloud Daily room
   for voice + typed input; renders transcripts and harness UI.
-- **Pipecat Cloud (Python)**: STT (Deepgram), TTS (Cartesia), VAD/smart-turn,
-  inference gate, harness bridge, and the registry-driven event router. No
-  voice LLM in the main flow — the harness *is* the LLM.
+- **Pipecat Cloud (Python)**: STT (Deepgram or xAI/Grok), TTS (Cartesia or xAI),
+  VAD/smart-turn, inference gate, harness bridge, and the registry-driven event
+  router. No voice LLM in the main flow — the harness *is* the LLM.
 - **Relay (Cloudflare Worker)**: mints Pipecat Cloud sessions, derives the
   per-session HMAC token, and routes JSON envelopes between the orchestrator
   and the Mac daemon via a `UserChannel` durable object.
@@ -151,16 +152,18 @@ iPhone ─ WebRTC ─ Pipecat Cloud (Python orchestrator)
 | Service | Purpose | Get one at |
 |---|---|---|
 | Pipecat Cloud | Hosts the cloud orchestrator | https://daily.co/products/pipecat-cloud |
-| Deepgram | Server-side STT (Nova-3) | https://console.deepgram.com |
-| Cartesia | Server-side streaming TTS (Sonic) | https://play.cartesia.ai |
+| Deepgram | Server-side STT (Nova-3) — default provider | https://console.deepgram.com |
+| xAI | Server-side STT + TTS (Grok) — alternative provider | https://console.x.ai |
+| Cartesia | Server-side streaming TTS (Sonic) — default provider | https://play.cartesia.ai |
 | Pi provider (Anthropic, OpenAI Codex, GitHub Copilot, etc.) | Agent access via Pi auth | Configured during `overwatch setup` |
 
 ## Speech Stack
 
-- STT: Deepgram Nova-3, streaming with interim results.
-- TTS: Cartesia Sonic, streaming PCM as the assistant text arrives.
+- STT: Deepgram Nova-3 (default) or xAI/Grok, streaming with interim results.
+- TTS: Cartesia Sonic (default) or xAI, streaming PCM as the assistant text arrives.
 - VAD: Silero; turn-detection: pipecat smart-turn.
 - The voice loop runs entirely server-side — the phone is a thin WebRTC client.
+- Switch providers: `overwatch setup --stt xai --tts xai` (or `--stt grok`).
 
 ## Project Structure
 

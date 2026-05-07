@@ -25,7 +25,7 @@ program
   .option("--deepgram-key <key>", "Deepgram API key")
   .option("--cartesia-key <key>", "Cartesia API key")
   .option("--xai-key <key>", "xAI API key")
-  .option("--stt <provider>", "Speech-to-text provider (deepgram)")
+  .option("--stt <provider>", "Speech-to-text provider (deepgram, xai, grok)")
   .option("--tts <provider>", "Text-to-speech provider (cartesia, xai)")
   .option("--stt-model <model>", "Speech-to-text model")
   .option("--tts-model <model>", "Text-to-speech model")

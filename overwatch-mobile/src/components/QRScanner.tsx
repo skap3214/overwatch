@@ -4,7 +4,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { X } from "lucide-react-native";
 import { useColors } from "../theme";
 import { usePairingStore } from "../stores/pairing-store";
-import type { TTSProvider } from "../stores/pairing-store";
+import type { STTProvider, TTSProvider } from "../stores/pairing-store";
 
 type Props = {
   onClose: () => void;
@@ -15,11 +15,13 @@ interface QRPayload {
   r?: string; // relayUrl
   u?: string; // userId
   t?: string; // pairingToken
+  stt?: STTProvider;
   tts?: TTSProvider;
   // Long keys
   relay?: string;
   user?: string;
   token?: string;
+  sttProvider?: STTProvider;
   ttsProvider?: TTSProvider;
 }
 
@@ -51,6 +53,7 @@ export function QRScanner({ onClose }: Props) {
           r: url.searchParams.get("r") ?? undefined,
           u: url.searchParams.get("u") ?? undefined,
           t: url.searchParams.get("t") ?? undefined,
+          stt: normalizeSTTProvider(url.searchParams.get("stt")),
           tts: normalizeTTSProvider(url.searchParams.get("tts")),
         };
       } else {
@@ -60,12 +63,13 @@ export function QRScanner({ onClose }: Props) {
       const relayUrl = payload.r ?? payload.relay;
       const userId = payload.u ?? payload.user;
       const pairingToken = payload.t ?? payload.token;
+      const sttProvider = normalizeSTTProvider(payload.stt ?? payload.sttProvider);
       const ttsProvider = normalizeTTSProvider(payload.tts ?? payload.ttsProvider);
       if (!userId || !pairingToken) {
         throw new Error("Invalid QR payload — missing user or token");
       }
 
-      await setPairing({ relayUrl, userId, pairingToken, ttsProvider });
+      await setPairing({ relayUrl, userId, pairingToken, sttProvider, ttsProvider });
       onClose();
     } catch (err) {
       // Allow the scanner to keep working — re-arm and let the user try again.
@@ -148,6 +152,11 @@ export function QRScanner({ onClose }: Props) {
       </View>
     </View>
   );
+}
+
+function normalizeSTTProvider(value: unknown): STTProvider | undefined {
+  if (value === "grok") return "xai";
+  return value === "deepgram" || value === "xai" ? value : undefined;
 }
 
 function normalizeTTSProvider(value: unknown): TTSProvider | undefined {

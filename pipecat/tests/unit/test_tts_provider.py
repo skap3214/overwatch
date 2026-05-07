@@ -42,6 +42,7 @@ def test_load_requires_cartesia_for_cartesia_paths(monkeypatch: pytest.MonkeyPat
     monkeypatch.delenv("CARTESIA_API_KEY", raising=False)
     monkeypatch.delenv("XAI_API_KEY", raising=False)
     monkeypatch.delenv("TTS_PROVIDER", raising=False)
+    monkeypatch.delenv("STT_PROVIDER", raising=False)
 
     with pytest.raises(RuntimeError, match="CARTESIA_API_KEY"):
         load()
@@ -54,6 +55,7 @@ def test_load_requires_xai_only_when_xai_is_selectable(
     monkeypatch.setenv("TTS_PROVIDER", "xai")
     monkeypatch.delenv("CARTESIA_API_KEY", raising=False)
     monkeypatch.delenv("XAI_API_KEY", raising=False)
+    monkeypatch.delenv("STT_PROVIDER", raising=False)
 
     with pytest.raises(RuntimeError, match="XAI_API_KEY"):
         load()
